@@ -1,0 +1,20 @@
+[project]
+name = "nod-and-edge"
+version = "0.1.0"
+description = "A stateful AI bedtime story architect for kids."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "langgraph>=0.2.0",
+    "langchain-groq>=0.1.0",
+    "streamlit>=1.40.0",
+    "python-dotenv>=1.0.1",
+]
+
+[tool.uv]
+managed = true
+package = false
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build_meta"

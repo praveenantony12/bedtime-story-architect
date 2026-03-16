@@ -1,0 +1,13 @@
+{
+  "phase": "storytelling",
+  "story_so_far": "",
+  "current_question": "",
+  "current_narration": "Okay! What kind of story would you like? A brave dragon? A magical princess? A space adventure?",
+  "current_image_prompt": "",
+  "current_image_b64": "",
+  "last_fetched_prompt": "",
+  "greeting_done": true,
+  "is_ending": false,
+  "moral": "",
+  "goodnight": ""
+}

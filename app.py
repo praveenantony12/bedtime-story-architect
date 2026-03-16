@@ -1,6 +1,7 @@
 import base64
 import json
 import os
+import random
 import re
 import uuid
 from io import BytesIO
@@ -15,8 +16,31 @@ from agent import get_agent
 load_dotenv()
 
 APP_TITLE = "Dream Story Time"
-PROFILE_FILE = ".story_profile.json"
 SESSION_FILE = ".story_session.json"
+
+AGE_FACTS = {
+    "small": [
+        "Did you know? Owls can turn their heads a lot to look around at night.",
+        "Funny fact: A group of flamingos is called a flamboyance.",
+        "Space fact: The Moon has little moonquakes, just like tiny earthquakes.",
+        "Nature fact: Honey never spoils, even after many years.",
+        "Animal fact: Sea otters hold hands while they sleep.",
+    ],
+    "medium": [
+        "Brain fact: Your brain uses about as much energy as a small light bulb.",
+        "Ocean fact: Some jellyfish glow in the dark.",
+        "Space fact: A day on Venus is longer than a year on Venus.",
+        "Animal fact: Octopuses have three hearts.",
+        "History fact: Ancient people used stars to navigate at night.",
+    ],
+    "big": [
+        "Science fact: Lightning can heat the air hotter than the surface of the sun.",
+        "Space fact: Neutron stars can spin hundreds of times each second.",
+        "Nature fact: Trees can share nutrients through underground fungal networks.",
+        "Body fact: Your bones are constantly rebuilding themselves.",
+        "Tech fact: The first computer bug was an actual moth.",
+    ],
+}
 
 
 # ── Persistence ───────────────────────────────────────────────────────────────
@@ -39,12 +63,11 @@ def _write_json(path: str, data: dict) -> None:
         pass
 
 
-def save_profile(child_name: str, age: int, thread_id: str) -> None:
-    _write_json(PROFILE_FILE, {"child_name": child_name, "age": age, "thread_id": thread_id})
-
-
 def save_session() -> None:
     _write_json(SESSION_FILE, {
+        "child_name": st.session_state.get("child_name", ""),
+        "age": int(st.session_state.get("age", 6)),
+        "thread_id": st.session_state.get("thread_id", ""),
         "phase": st.session_state.get("phase", "greeting"),
         "story_so_far": st.session_state.get("story_so_far", ""),
         "current_question": st.session_state.get("current_question", ""),
@@ -59,7 +82,85 @@ def save_session() -> None:
     })
 
 
-def ensure_session_defaults(voice_input: str = "") -> None:
+def _age_bucket(age: int) -> str:
+    if age <= 6:
+        return "small"
+    if age <= 9:
+        return "medium"
+    return "big"
+
+
+def _ensure_age_facts(age: int) -> None:
+    bucket = _age_bucket(age)
+    if st.session_state.get("facts_bucket") == bucket and st.session_state.get("facts_list"):
+        return
+    facts = AGE_FACTS[bucket][:]
+    random.shuffle(facts)
+    st.session_state["facts_bucket"] = bucket
+    st.session_state["facts_list"] = facts
+    st.session_state["facts_idx"] = 0
+
+
+def next_loading_message(base: str, age: int) -> str:
+    _ensure_age_facts(age)
+    facts = st.session_state.get("facts_list", [])
+    if not facts:
+        return base
+    idx = st.session_state.get("facts_idx", 0)
+    fact = facts[idx % len(facts)]
+    st.session_state["facts_idx"] = idx + 1
+    return f"{base}  ✨ {fact}"
+
+
+def save_profile_to_local_storage(child_name: str, age: int) -> None:
+    payload_name = json.dumps(child_name)
+    payload_age = json.dumps(str(age))
+    components.html(
+        f"""<!doctype html><html><body><script>
+        (function() {{
+          const pw = window.parent;
+          pw.localStorage.setItem('bst_child_name', {payload_name});
+          pw.localStorage.setItem('bst_child_age', {payload_age});
+        }})();
+        </script></body></html>""",
+        height=0,
+    )
+
+
+def bootstrap_profile_from_local_storage() -> None:
+    if st.query_params.get("profile_loaded", ""):
+        return
+    components.html(
+        """<!doctype html><html><body><script>
+        (function() {
+          const pw = window.parent;
+                    const pd = pw.document;
+                    function navigateTo(url) {
+                        const s = pd.createElement('script');
+                        s.textContent = 'window.location.href=' + JSON.stringify(url) + ';';
+                        pd.head.appendChild(s);
+                        s.remove();
+                    }
+          const url = new URL(pw.location.href);
+          if (url.searchParams.get('profile_loaded')) return;
+          const n = pw.localStorage.getItem('bst_child_name') || '';
+          const a = pw.localStorage.getItem('bst_child_age') || '';
+          if (n) url.searchParams.set('profile_name', n);
+          if (a) url.searchParams.set('profile_age', a);
+          url.searchParams.set('profile_loaded', 'one');
+                    navigateTo(url.toString());
+        })();
+        </script></body></html>""",
+        height=0,
+    )
+    st.stop()
+
+
+def ensure_session_defaults(
+    voice_input: str = "",
+    profile_name: str = "",
+    profile_age: str = "",
+) -> None:
     """
     Called once per Python session (not per rerun).
     Distinguishes between a fresh browser open vs a URL-param voice-navigation reload.
@@ -68,17 +169,27 @@ def ensure_session_defaults(voice_input: str = "") -> None:
     if "session_loaded" in st.session_state:
         return
 
-    profile = _read_json(PROFILE_FILE)
+    sess = _read_json(SESSION_FILE)
     is_voice_nav = bool(voice_input)
 
-    st.session_state["child_name"] = profile.get("child_name", "")
-    st.session_state["age"] = profile.get("age", 6)
-    st.session_state["thread_id"] = profile.get("thread_id") or str(uuid.uuid4())
-    st.session_state["profile_set"] = bool(profile.get("child_name"))
+    clean_name = (profile_name or "").strip() or (sess.get("child_name", "") or "").strip()
+
+    if profile_age:
+        try:
+            clean_age = int(profile_age)
+        except Exception:
+            clean_age = int(sess.get("age", 6) or 6)
+    else:
+        clean_age = int(sess.get("age", 6) or 6)
+    clean_age = max(3, min(12, clean_age))
+
+    st.session_state["child_name"] = clean_name
+    st.session_state["age"] = clean_age
+    st.session_state["thread_id"] = sess.get("thread_id") or str(uuid.uuid4())
+    st.session_state["profile_set"] = bool(clean_name)
 
     if is_voice_nav:
         # Mid-story page reload — restore conversation state from disk
-        sess = _read_json(SESSION_FILE)
         st.session_state["phase"] = sess.get("phase", "greeting")
         st.session_state["story_so_far"] = sess.get("story_so_far", "")
         st.session_state["current_question"] = sess.get("current_question", "")
@@ -491,7 +602,14 @@ def voice_inject(
     setFab('sending', '✓');
     setLbl(text === '__CONTINUE__' ? 'Next...' : 'Got it!');
     pw.speechSynthesis && pw.speechSynthesis.cancel();
-    navigateTo(pw.location.href.split('?')[0] + '?voice_input=' + encodeURIComponent(text));
+        const name = pw.localStorage.getItem('bst_child_name') || '';
+        const age = pw.localStorage.getItem('bst_child_age') || '';
+        const p = new URLSearchParams();
+        p.set('voice_input', text);
+        if (name) p.set('profile_name', name);
+        if (age) p.set('profile_age', age);
+        p.set('profile_loaded', 'one');
+        navigateTo(pw.location.href.split('?')[0] + '?' + p.toString());
   }}
 
   function setFab(cls, html) {{
@@ -644,7 +762,7 @@ def voice_inject(
         byeU.rate = 0.88; byeU.pitch = 1.25; byeU.volume = 1.0;
         function doGoodbye() {{
           const v = pickVoice(); if (v) byeU.voice = v;
-          byeU.onend = byeU.onerror = () => navigateTo(pw.location.href.split('?')[0] + '?voice_input=__STOP__');
+                    byeU.onend = byeU.onerror = () => sendVoice('__STOP__');
           synth.speak(byeU);
         }}
         if (synth.getVoices().length > 0) doGoodbye();
@@ -747,18 +865,21 @@ def run_agent_turn(agent, thread_id, phase, child_name, age, kid_input, story_so
 def main() -> None:
     st.set_page_config(page_title=APP_TITLE, page_icon="static/icon-192.png", layout="centered")
     inject_css()
+    bootstrap_profile_from_local_storage()
 
     # Read (and immediately clear) any incoming voice input from URL
     # IMPORTANT: must happen BEFORE ensure_session_defaults so the is_voice_nav
     # check inside that function sees the param on its first run.
     voice_input: str = st.query_params.get("voice_input", "")
+    profile_name: str = st.query_params.get("profile_name", "")
+    profile_age: str = st.query_params.get("profile_age", "")
     if voice_input:
         try:
             del st.query_params["voice_input"]
         except Exception:
             pass
 
-    ensure_session_defaults(voice_input)
+    ensure_session_defaults(voice_input, profile_name, profile_age)
 
     if not os.environ.get("GROQ_API_KEY"):
         st.error("GROQ_API_KEY is not set. Please set it in your environment.")
@@ -807,7 +928,8 @@ def main() -> None:
                     "goodnight": "",
                     "has_shown_voice": False,
                 })
-                save_profile(name.strip(), int(age_val), tid)
+                save_profile_to_local_storage(name.strip(), int(age_val))
+                save_session()
                 st.rerun()
         return
 
@@ -825,9 +947,38 @@ def main() -> None:
         unsafe_allow_html=True,
     )
 
+    with st.expander("Profile", expanded=False):
+        edit_name = st.text_input("Name", value=child_name, key="profile_edit_name")
+        edit_age = st.number_input(
+            "Age",
+            min_value=3,
+            max_value=12,
+            value=int(age),
+            step=1,
+            key="profile_edit_age",
+        )
+        if st.button("Save Profile", key="save_profile_edits"):
+            if edit_name.strip():
+                st.session_state["child_name"] = edit_name.strip()
+                st.session_state["age"] = int(edit_age)
+                st.session_state["thread_id"] = str(uuid.uuid4())
+                st.session_state["phase"] = "greeting"
+                st.session_state["story_so_far"] = ""
+                st.session_state["current_question"] = ""
+                st.session_state["current_narration"] = ""
+                st.session_state["current_image_prompt"] = ""
+                st.session_state["greeting_done"] = False
+                st.session_state["is_ending"] = False
+                st.session_state["moral"] = ""
+                st.session_state["goodnight"] = ""
+                st.session_state["has_shown_voice"] = False
+                save_profile_to_local_storage(edit_name.strip(), int(edit_age))
+                save_session()
+                st.rerun()
+
     # ── AUTO-GREETING (first turn of this session) ────────────────────────────
     if not st.session_state["greeting_done"]:
-        with st.spinner("Waking up the story magic..."):
+        with st.spinner(next_loading_message("Waking up the story magic...", age)):
             state = run_agent_turn(agent, thread_id, "greeting", child_name, age, "", "")
         _apply_state(state)
         save_session()
@@ -836,15 +987,8 @@ def main() -> None:
     # ── PROCESS INCOMING VOICE INPUT ─────────────────────────────────────────
     # Allow voice input even during ending (so kid can say "yes" for another story)
     if voice_input == "__STOP__":
-        # STOP — reset for a new adventure; JS already said goodbye so skip auto-greet
+        # STOP — reset and restart normal greeting flow on next START
         _clear_story_state()
-        st.session_state["greeting_done"] = True   # prevent auto-greet
-        st.session_state["phase"] = "storytelling"  # skip warm-up, ready for story
-        st.session_state["story_so_far"] = ""
-        st.session_state["current_narration"] = (
-            "Okay! What kind of story would you like? "
-            "A brave dragon? A magical princess? A space adventure?"
-        )
         save_session()
         st.rerun()
     elif voice_input == "__CONTINUE__":
@@ -853,7 +997,7 @@ def main() -> None:
         phase_now = st.session_state.get("phase", "greeting")
         story_now = st.session_state.get("story_so_far", "").strip()
         if phase_now == "storytelling" and story_now:
-            with st.spinner("Continuing the story..."):
+            with st.spinner(next_loading_message("Continuing the story...", age)):
                 state = run_agent_turn(
                     agent, thread_id,
                     phase="storytelling",
@@ -867,7 +1011,7 @@ def main() -> None:
             save_session()
         st.rerun()
     elif voice_input:
-        with st.spinner("Thinking of the next part of your story..."):
+        with st.spinner(next_loading_message("Thinking of the next part of your story...", age)):
             state = run_agent_turn(
                 agent, thread_id,
                 phase=st.session_state["phase"],
@@ -891,7 +1035,7 @@ def main() -> None:
     new_prompt  = st.session_state.get("current_image_prompt", "")
     last_prompt = st.session_state.get("last_fetched_prompt", "")
     if new_prompt and new_prompt != last_prompt:
-        with st.spinner("Painting your scene..."):
+        with st.spinner(next_loading_message("Painting your scene...", age)):
             img_bytes = fetch_story_image(new_prompt)
         new_b64 = base64.b64encode(img_bytes).decode()
         st.session_state["current_image_b64"]   = new_b64

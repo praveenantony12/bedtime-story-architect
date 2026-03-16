@@ -101,15 +101,20 @@ def _ensure_age_facts(age: int) -> None:
     st.session_state["facts_idx"] = 0
 
 
-def next_loading_message(base: str, age: int) -> str:
+def get_fun_fact(age: int) -> str:
+    """Return the next age-appropriate fun fact and advance the index."""
     _ensure_age_facts(age)
     facts = st.session_state.get("facts_list", [])
     if not facts:
-        return base
+        return ""
     idx = st.session_state.get("facts_idx", 0)
     fact = facts[idx % len(facts)]
     st.session_state["facts_idx"] = idx + 1
-    return f"{base}  ✨ {fact}"
+    return fact
+
+def next_loading_message(base: str, age: int) -> str:
+    fact = get_fun_fact(age)
+    return f"{base}  ✨ {fact}" if fact else base
 
 
 def save_profile_to_local_storage(child_name: str, age: int) -> None:
@@ -705,7 +710,7 @@ def voice_inject(
       synth.cancel();
       if (!text || !text.trim()) {{ cb && cb(); return; }}
       const u = new pw.SpeechSynthesisUtterance(text);
-      u.rate = 0.88; u.pitch = 1.25; u.volume = 1.0;
+      u.rate = 0.82; u.pitch = 1.25; u.volume = 1.0;
       u.onstart = () => {{ setFab('playing', 'STOP'); setLbl('Tap to interrupt'); }};
       u.onend   = () => {{ setTimeout(() => cb && cb(), 400); }};
       u.onerror = () => {{ cb && cb(); }};
@@ -745,13 +750,14 @@ def voice_inject(
     }}
 
     pw.__storyGo = function() {{
-      speak(pw.__storyText || '', () => listenThen(pw.__storyCont ? 4000 : 0));
+      speak(pw.__storyText || '', () => listenThen(5000));
     }};
 
     // ── FAB click logic ───────────────────────────────────────────────────
     fab.addEventListener('click', () => {{
       const cls = pd.getElementById('__sfab').className;
-      if (cls === 'idle')   {{ pw.__storyGo(); return; }}
+      // Small delay so initial dialogue isn't clipped by the browser
+      if (cls === 'idle')   {{ setTimeout(() => pw.__storyGo() && pw.__storyGo(), 700); return; }}
       if (cls === 'playing') {{
         // Tap STOP → immediately switch to START and say goodbye
         synth.cancel();
@@ -759,7 +765,7 @@ def voice_inject(
         setFab('idle', 'START');
         setLbl('See you next time! 🌙');
         const byeU = new pw.SpeechSynthesisUtterance('Sweet dreams! Tap start whenever you want another adventure!');
-        byeU.rate = 0.88; byeU.pitch = 1.25; byeU.volume = 1.0;
+        byeU.rate = 0.82; byeU.pitch = 1.25; byeU.volume = 1.0;
         function doGoodbye() {{
           const v = pickVoice(); if (v) byeU.voice = v;
                     byeU.onend = byeU.onerror = () => sendVoice('__STOP__');
@@ -795,7 +801,8 @@ def voice_inject(
     }}
   }}
 
-  if (AUTO) setTimeout(() => pw.__storyGo && pw.__storyGo(), 400);
+  // Slightly longer delay on auto-play so the browser audio context is full ready
+  if (AUTO) setTimeout(() => pw.__storyGo && pw.__storyGo(), 800);
 
 }})();
 </script></body></html>"""
@@ -981,6 +988,7 @@ def main() -> None:
         with st.spinner(next_loading_message("Waking up the story magic...", age)):
             state = run_agent_turn(agent, thread_id, "greeting", child_name, age, "", "")
         _apply_state(state)
+        # No speak_trigger here - user must tap START to begin the first greeting
         save_session()
         st.rerun()
 
@@ -992,26 +1000,41 @@ def main() -> None:
         save_session()
         st.rerun()
     elif voice_input == "__CONTINUE__":
-        # Auto-continue signal from JS (sent when kid says nothing after TTS)
-        # Only fire when the story has actually started — skip if waiting for kid's story choice
+        # 5-second timeout fired - advance with an empty (or default) answer
         phase_now = st.session_state.get("phase", "greeting")
         story_now = st.session_state.get("story_so_far", "").strip()
-        if phase_now == "storytelling" and story_now:
-            with st.spinner(next_loading_message("Continuing the story...", age)):
+        if phase_now != "greeting":
+            # When waiting for a story choice and nothing was said, pick a default
+            default_input = ""
+            if phase_now == "storytelling" and not story_now:
+                default_input = "surprise me with a story"
+            fun_fact = get_fun_fact(age)
+            spinner_msg = (
+                f"Getting the next page ready... Here's a fun fact while you wait: {fun_fact}"
+                if fun_fact else "Getting the next page ready..."
+            )
+            with st.spinner(spinner_msg): 
                 state = run_agent_turn(
                     agent, thread_id,
-                    phase="storytelling",
+                    phase=phase_now,
                     child_name=child_name,
                     age=age,
-                    kid_input="",
+                    kid_input=default_input,
                     story_so_far=st.session_state.get("story_so_far", ""),
                 )
             _apply_state(state)
             st.session_state["has_shown_voice"] = True
+            st.session_state["speech_trigger"] = True  # one-shot: auto-play this new narration
+            st.session_state["speech_bridge"] = fun_fact  # narrate the fun fact while waiting for the next page to load
             save_session()
         st.rerun()
     elif voice_input:
-        with st.spinner(next_loading_message("Thinking of the next part of your story...", age)):
+        fun_fact = get_fun_fact(age)
+        spinner_msg = (
+            f"Thinking of the next part of your story... Here's a fun fact while you wait: {fun_fact}"
+            if fun_fact else "Thinking of the next part of your story..."
+        )
+        with st.spinner(spinner_msg):
             state = run_agent_turn(
                 agent, thread_id,
                 phase=st.session_state["phase"],
@@ -1022,6 +1045,8 @@ def main() -> None:
             )
         _apply_state(state)
         st.session_state["has_shown_voice"] = True
+        st.session_state["speech_trigger"] = True  # one-shot: auto-play this new narration
+        st.session_state["speech_bridge"] = fun_fact  # narrate the fun fact while waiting for the next page to load
         save_session()
         st.rerun()
 
@@ -1043,42 +1068,24 @@ def main() -> None:
         save_session()
         img_placeholder.image(img_bytes, width="stretch")
 
-    # ── ENDING goodnight card ─────────────────────────────────────────────
-    if st.session_state.get("is_ending"):
-        moral     = st.session_state.get("moral", "")
-        goodnight = st.session_state.get("goodnight", "")
-        if moral or goodnight:
-            st.markdown(
-                f'<div class="goodnight-card">'
-                f'<div class="moral">{moral}</div>'
-                f'<div class="message">&#127769; {goodnight}</div>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-
-    # ── CURRENT QUESTION (only during warm-up phases, NOT storytelling) ───
-    question = st.session_state.get("current_question", "")
-    phase    = st.session_state.get("phase", "greeting")
-    if question and phase not in ("storytelling", "want_more", "ending"):
-        st.markdown(
-            f'<div class="question-bubble">&#127775; {question}</div>',
-            unsafe_allow_html=True,
-        )
-
     # ── VOICE INJECT (fixed bottom FAB + TTS/STT) ────────────────────────
     # is_idle=True  → show green START (before first interaction)
     # is_idle=False → show purple STOP pulsing (story in progress)
-    auto    = st.session_state.get("has_shown_voice", False)
-    is_idle = not auto  # START before first tap, STOP after
-    # Only auto-continue when the story is actually in progress (story_so_far non-empty).
-    # When waiting for the kid to say what story they want, wait indefinitely.
-    is_cont = phase == "storytelling" and bool(st.session_state.get("story_so_far", "").strip())
-    st.session_state["has_shown_voice"] = True
+    #
+    # speak_trigger is a ONE-SHOT flag: set only when new narration arrives
+    # consumed (popped) here so subsequent renders don't re-trigger the same narration (double fire TTS).
+    auto    = st.session_state.pop("speak_trigger", False)
+    is_idle = not st.session_state.get("has_shown_voice", False)
+    phase = st.session_state.get("phase", "greeting")
+    # Prepend the fun fact that was shown while loading so kids hear it too.
+    bridge = st.session_state.pop("speech_bridge", "")
+    narration_txt = st.session_state.get("current_narration", "")
+    text_to_speak = f"{bridge} ... {narration_txt}" if bridge else narration_txt
     voice_inject(
-        text_to_speak=st.session_state.get("current_narration", ""),
+        text_to_speak=text_to_speak,
         is_idle=is_idle,
         auto_start=auto,
-        is_continuous=is_cont,
+        is_continuous=False, # JS always use 5-second timeout now
     )
 
 

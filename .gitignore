@@ -13,3 +13,10 @@ wheels/
 .env
 .env.local
 .env.*.local
+
+# Runtime session/profile files (created at runtime, not committed)
+.story_profile.json
+.story_session.json
+
+# uv lock (optional, keep if you want reproducible installs)
+# uv.lock

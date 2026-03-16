@@ -255,17 +255,11 @@ hr { border-color: rgba(124,92,191,0.3); }
 # ── Image creation ─────────────────────────────────────────────────────────────
 
 @st.cache_data
-def create_story_image(image_prompt: str, _seed_hint: int = 0) -> bytes:
-    """
-    Beautiful atmospheric PIL scene: gradient sky, stars, moon,
-    mountain silhouettes, tree line, optional glowing window.
-    No text — looks like actual art, not a placeholder.
-    """
+def create_story_image(image_prompt: str) -> bytes:
     import random
-    import math
 
     W, H = 900, 480
-    rng = random.Random(abs(hash(image_prompt)) + _seed_hint)
+    rng = random.Random(abs(hash(image_prompt)))
 
     # ── Pick palette based on prompt keywords ──────────────────────────
     p = image_prompt.lower()
@@ -437,8 +431,7 @@ def fetch_story_image(image_prompt: str) -> bytes:
             pass  # fall through to PIL
 
     # Fallback: local PIL atmospheric scene
-    seed = abs(hash(image_prompt)) % 9999
-    return create_story_image(image_prompt, seed)
+    return create_story_image(image_prompt)
 
 
 # ── TTS text cleanup ───────────────────────────────────────────────────────────
@@ -466,14 +459,6 @@ def voice_inject(
     auto_start: bool = False,
     is_continuous: bool = False,
 ) -> None:
-    """
-    Inject a fixed-bottom FAB button + TTS/STT into the parent page.
-
-    is_idle        → True before first interaction: show green ▶ START button
-    auto_start     → True after first interaction: auto-play TTS on load
-    is_continuous  → True during storytelling: after TTS, auto-listen with 4s
-                     timeout and send __CONTINUE__ if kid says nothing
-    """
     clean = (
         clean_for_tts(text_to_speak)
         .replace("\\", "\\\\")
@@ -481,10 +466,9 @@ def voice_inject(
         .replace('"', "'")
         .replace("\n", " ")
     )
-    auto_js       = "true" if auto_start else "false"
-    is_idle_js    = "true" if is_idle else "false"
-    is_cont_js    = "true" if is_continuous else "false"
-    img_data      = ""  # kept for future use
+    auto_js    = "true" if auto_start else "false"
+    is_idle_js = "true" if is_idle else "false"
+    is_cont_js = "true" if is_continuous else "false"
 
     bridge_html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>
 <script>
@@ -674,19 +658,6 @@ def voice_inject(
       }}
     }});
 
-    // ── Long-press (1.5s) = full STOP ─────────────────────────────────────
-    let holdT = null;
-    const clearHold = () => {{ if (holdT) {{ clearTimeout(holdT); holdT = null; }} }};
-    fab.addEventListener('pointerdown', () => {{
-      holdT = setTimeout(() => {{
-        holdT = null;
-        synth.cancel();
-        if (pw.__storyRec) {{ try {{ pw.__storyRec.abort(); }} catch(_) {{}} pw.__storyRec = null; }}
-        sendVoice('__STOP__');
-      }}, 1500);
-    }});
-    ['pointerup', 'pointerleave', 'pointercancel'].forEach(e => fab.addEventListener(e, clearHold));
-
   }} // end install-once
 
   // ── Per-render: update text, continuous flag, and FAB state ──────────
@@ -774,7 +745,7 @@ def run_agent_turn(agent, thread_id, phase, child_name, age, kid_input, story_so
 # ── Main ───────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    st.set_page_config(page_title=APP_TITLE, page_icon="🌙", layout="centered")
+    st.set_page_config(page_title=APP_TITLE, page_icon="static/icon-192.png", layout="centered")
     inject_css()
 
     # Read (and immediately clear) any incoming voice input from URL

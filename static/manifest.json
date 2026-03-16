@@ -1,21 +1,23 @@
 {
   "name": "Bedtime Story Architect",
-  "short_name": "Stories",
+  "short_name": "Story Time",
   "start_url": ".",
   "display": "standalone",
   "background_color": "#050816",
   "theme_color": "#050816",
-  "description": "A calming bedtime story app for kids, powered by LangGraph and Groq.",
+  "description": "A magical bedtime story app for kids, powered by AI.",
   "icons": [
     {
       "src": "/static/icon-192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     },
     {
       "src": "/static/icon-512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ]
 }

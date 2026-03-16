@@ -224,7 +224,6 @@ class BedtimeStoryAgent:
             raw = self._llm(
                 system=(
                     SLEEPY_SYSTEM_PROMPT
-                    + f"\n\nis_sleepy_time = true\n\n"
                     + f"You are a magical bedtime storyteller for a {age}-year-old named {child_name}. "
                     "Tell the story in short vivid sentences that sound natural when spoken aloud. "
                     "Each segment should be three to five sentences. "
@@ -281,7 +280,6 @@ class BedtimeStoryAgent:
                 raw = self._llm(
                     system=(
                         SLEEPY_SYSTEM_PROMPT
-                        + "\n\nis_sleepy_time = true\n\n"
                         + "You are a warm loving bedtime storyteller wrapping up the evening."
                     ),
                     user=(

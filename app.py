@@ -112,6 +112,7 @@ def get_fun_fact(age: int) -> str:
     st.session_state["facts_idx"] = idx + 1
     return fact
 
+
 def next_loading_message(base: str, age: int) -> str:
     fact = get_fun_fact(age)
     return f"{base}  ✨ {fact}" if fact else base
@@ -757,7 +758,7 @@ def voice_inject(
     fab.addEventListener('click', () => {{
       const cls = pd.getElementById('__sfab').className;
       // Small delay so initial dialogue isn't clipped by the browser
-      if (cls === 'idle')   {{ setTimeout(() => pw.__storyGo() && pw.__storyGo(), 700); return; }}
+      if (cls === 'idle')   {{ setTimeout(() => pw.__storyGo && pw.__storyGo(), 700); return; }}
       if (cls === 'playing') {{
         // Tap STOP → immediately switch to START and say goodbye
         synth.cancel();
@@ -801,7 +802,7 @@ def voice_inject(
     }}
   }}
 
-  // Slightly longer delay on auto-play so the browser audio context is full ready
+  // Slightly longer delay on auto-play so the browser audio context is fully ready
   if (AUTO) setTimeout(() => pw.__storyGo && pw.__storyGo(), 800);
 
 }})();
@@ -1010,8 +1011,8 @@ def main() -> None:
                 default_input = "surprise me with a story"
             fun_fact = get_fun_fact(age)
             spinner_msg = (
-                f"Getting the next page ready... Here's a fun fact while you wait: {fun_fact}"
-                if fun_fact else "Getting the next page ready..."
+                f"Getting the next part ready... Here's a fun fact while you wait: {fun_fact}"
+                if fun_fact else "Getting the next part ready..."
             )
             with st.spinner(spinner_msg): 
                 state = run_agent_turn(
@@ -1024,8 +1025,8 @@ def main() -> None:
                 )
             _apply_state(state)
             st.session_state["has_shown_voice"] = True
-            st.session_state["speech_trigger"] = True  # one-shot: auto-play this new narration
-            st.session_state["speech_bridge"] = fun_fact  # narrate the fun fact while waiting for the next page to load
+            st.session_state["speak_trigger"] = True   # one-shot: auto-play this new narration
+            st.session_state["speech_bridge"] = fun_fact  # narrate the fun fact before the story
             save_session()
         st.rerun()
     elif voice_input:
@@ -1045,8 +1046,8 @@ def main() -> None:
             )
         _apply_state(state)
         st.session_state["has_shown_voice"] = True
-        st.session_state["speech_trigger"] = True  # one-shot: auto-play this new narration
-        st.session_state["speech_bridge"] = fun_fact  # narrate the fun fact while waiting for the next page to load
+        st.session_state["speak_trigger"] = True   # one-shot: auto-play this new narration
+        st.session_state["speech_bridge"] = fun_fact  # narrate the fun fact before the story
         save_session()
         st.rerun()
 
@@ -1076,16 +1077,16 @@ def main() -> None:
     # consumed (popped) here so subsequent renders don't re-trigger the same narration (double fire TTS).
     auto    = st.session_state.pop("speak_trigger", False)
     is_idle = not st.session_state.get("has_shown_voice", False)
-    phase = st.session_state.get("phase", "greeting")
+    phase   = st.session_state.get("phase", "greeting")
     # Prepend the fun fact that was shown while loading so kids hear it too.
-    bridge = st.session_state.pop("speech_bridge", "")
+    bridge  = st.session_state.pop("speech_bridge", "")
     narration_txt = st.session_state.get("current_narration", "")
     text_to_speak = f"{bridge} ... {narration_txt}" if bridge else narration_txt
     voice_inject(
         text_to_speak=text_to_speak,
         is_idle=is_idle,
         auto_start=auto,
-        is_continuous=False, # JS always use 5-second timeout now
+        is_continuous=False,  # JS always use 5-second timeout now
     )
 
 

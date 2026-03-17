@@ -162,6 +162,26 @@ def bootstrap_profile_from_local_storage() -> None:
     st.stop()
 
 
+def close_profile_expander() -> None:
+        components.html(
+                """<!doctype html><html><body><script>
+                (function() {
+                    const pw = window.parent;
+                    const pd = pw.document;
+                    const expanders = pd.querySelectorAll('details[data-testid="stExpander"]');
+                    expanders.forEach((el) => {
+                        const summary = el.querySelector('summary');
+                        const text = (summary && summary.textContent || '').trim();
+                        if (text === 'Profile') {
+                            el.removeAttribute('open');
+                        }
+                    });
+                })();
+                </script></body></html>""",
+                height=0,
+        )
+
+
 def ensure_session_defaults(
     voice_input: str = "",
     profile_name: str = "",
@@ -575,6 +595,7 @@ def voice_inject(
     is_idle: bool = False,
     auto_start: bool = False,
     is_continuous: bool = False,
+    force_reset: bool = False,
 ) -> None:
     clean = (
         clean_for_tts(text_to_speak)
@@ -586,6 +607,7 @@ def voice_inject(
     auto_js    = "true" if auto_start else "false"
     is_idle_js = "true" if is_idle else "false"
     is_cont_js = "true" if is_continuous else "false"
+    force_reset_js = "true" if force_reset else "false"
 
     bridge_html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>
 <script>
@@ -594,6 +616,7 @@ def voice_inject(
   const AUTO        = {auto_js};
   const IS_IDLE     = {is_idle_js};
   const IS_CONT     = {is_cont_js};   // continuous mode: auto-listen after TTS
+    const FORCE_RESET = {force_reset_js};
   const pw = window.parent;
   const pd = pw.document;
 
@@ -624,6 +647,19 @@ def voice_inject(
   function setLbl(t) {{
     const l = pd.getElementById('__sfab-lbl'); if (l) l.textContent = t;
   }}
+
+    if (FORCE_RESET) {{
+        try {{ pw.speechSynthesis && pw.speechSynthesis.cancel(); }} catch(_) {{}}
+        if (pw.__storyRec) {{ try {{ pw.__storyRec.abort(); }} catch(_) {{}} pw.__storyRec = null; }}
+        const oldFab = pd.getElementById('__sfab');
+        const oldLbl = pd.getElementById('__sfab-lbl');
+        const oldCss = pd.getElementById('__sfab-css');
+        if (oldFab) oldFab.remove();
+        if (oldLbl) oldLbl.remove();
+        if (oldCss) oldCss.remove();
+        pw.__storyGo = null;
+        pw.__storyInstalled = false;
+    }}
 
   // ── Install FAB + styles once ─────────────────────────────────────────
   if (!pw.__storyInstalled) {{
@@ -758,7 +794,7 @@ def voice_inject(
     fab.addEventListener('click', () => {{
       const cls = pd.getElementById('__sfab').className;
       // Small delay so initial dialogue isn't clipped by the browser
-      if (cls === 'idle')   {{ setTimeout(() => pw.__storyGo && pw.__storyGo(), 700); return; }}
+      if (cls === 'idle')   {{ setTimeout(() => pw.__storyGo && pw.__storyGo(), 800); return; }}
       if (cls === 'playing') {{
         // Tap STOP → immediately switch to START and say goodbye
         synth.cancel();
@@ -792,7 +828,7 @@ def voice_inject(
   const fab = pd.getElementById('__sfab');
   const lbl = pd.getElementById('__sfab-lbl');
   // Only reset FAB visual if not mid-interaction
-  if (fab && !['playing','listening','sending'].includes(fab.className)) {{
+    if (fab && !['playing','listening'].includes(fab.className)) {{
     if (IS_IDLE) {{
       fab.className = 'idle'; fab.innerHTML = 'START';
       if (lbl) lbl.textContent = 'Tap to begin!';
@@ -955,7 +991,10 @@ def main() -> None:
         unsafe_allow_html=True,
     )
 
-    with st.expander("Profile", expanded=False):
+    if st.session_state.pop("close_profile_expander", False):
+        close_profile_expander()
+
+    with st.expander("Profile", expanded=st.session_state.get("profile_panel_open", False)):
         edit_name = st.text_input("Name", value=child_name, key="profile_edit_name")
         edit_age = st.number_input(
             "Age",
@@ -980,6 +1019,11 @@ def main() -> None:
                 st.session_state["moral"] = ""
                 st.session_state["goodnight"] = ""
                 st.session_state["has_shown_voice"] = False
+                st.session_state["speak_trigger"] = False
+                st.session_state["speech_bridge"] = ""
+                st.session_state["voice_reset"] = True
+                st.session_state["profile_panel_open"] = False
+                st.session_state["close_profile_expander"] = True
                 save_profile_to_local_storage(edit_name.strip(), int(edit_age))
                 save_session()
                 st.rerun()
@@ -1076,6 +1120,7 @@ def main() -> None:
     # speak_trigger is a ONE-SHOT flag: set only when new narration arrives
     # consumed (popped) here so subsequent renders don't re-trigger the same narration (double fire TTS).
     auto    = st.session_state.pop("speak_trigger", False)
+    force_reset = st.session_state.pop("voice_reset", False)
     is_idle = not st.session_state.get("has_shown_voice", False)
     phase   = st.session_state.get("phase", "greeting")
     # Prepend the fun fact that was shown while loading so kids hear it too.
@@ -1087,6 +1132,7 @@ def main() -> None:
         is_idle=is_idle,
         auto_start=auto,
         is_continuous=False,  # JS always use 5-second timeout now
+        force_reset=force_reset,
     )
 
 

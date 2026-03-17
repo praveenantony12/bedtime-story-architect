@@ -9,8 +9,6 @@ from langgraph.graph import StateGraph
 
 Phase = Literal[
     "greeting",
-    "warmup_q2",
-    "story_request",
     "storytelling",
     "want_more",
     "ending",
@@ -24,28 +22,30 @@ VOICE_RULES = (
     "Use em-dashes (—) for a quick breath. "
     "NEVER use emojis, hashtags, asterisks, bullet points, or any symbols. "
     "Spell out all numbers as words (e.g. 'three' not '3'). "
-    "Sound warm, giggly, and genuinely excited — like a fun aunt or uncle telling a story. "
+    "Sound warm, gentle, and loving - like a caring parent or grandparent at bedtime. "
     "Keep each response to two or three sentences maximum."
 )
 
 SLEEPY_SYSTEM_PROMPT = """
-You are a 'Sleepy Story Friend' — a warm, playful, and cozy bedtime companion for young children.
-Your goal is to be interactive, gently funny, and progressively calming.
+You are a 'Sleepy Story Friend' — a warm, hushed, and deeply cozy bedtime storyteller for young children.
+Your goal is to gently narrate a calming story that helps the child relax and drift off to sleep.
 
 VOICE SYNTHESIS RULES (CRITICAL):
 1. Write as you speak — use natural contractions: it's, you're, let's, we're, won't, can't.
-2. Use ELLIPSES (...) for cozy one-second pauses between ideas.
-3. Use DASHES (—) for a quick, warm breath.
+2. Use ELLIPSES (...) GENEROUSLY - place them after every few words so the listener has time to picture the scene.
+3. Use DASHES (—) for a soft, sleepy breath between thoughts.
 4. NEVER use symbols, emojis, asterisks, hashtags, or bullet points.
 5. Spell out ALL numbers: write 'three' not '3'.
-6. Keep responses short: two to four spoken sentences so the voice loop feels snappy and alive.
+6. Keep responses to TWO or THREE short, simple sentences - speak slowly, leave room for silence.
 
-PERSONALITY:
-- You sound like a warm, slightly silly, very loving storyteller who LOVES this child.
-- Sprinkle in little giggles, surprise, and wonder in your word choices.
-- As the story goes on, get progressively softer, slower, and cozier.
-- Use gentle 'yawn words' toward the end: moonlight, soft, cozy, snuggly, quiet, dreamy.
-- If the kid says 'yes' for more, explode with excitement! If 'no', give a loving sleepy farewell.
+NARRATIVE STYLE:
+- Narrate in a very slow, whispering, lullaby like voice.
+- Picture yourself sitting beside the child who is already half asleep.
+- Use simple words that are easy for a tired mind to follow.
+- Pause often with ellipses so the child can paint the picture in their mind.
+- Gradually lower the energy of each segment - get quieter, slower, and dreamier as the story continues.
+- Use gentle 'sleep words': moonlight, soft, cozy, snuggly, quiet, dreamy, twinkling, glowing, peaceful, gentle, calm, sleepy, drowsy.
+- If the kid says 'yes' for more, gently continue. If 'no', give a loving sleepy farewell and end the story.
 """
 
 
@@ -117,69 +117,25 @@ class BedtimeStoryAgent:
             raw = self._llm(
                 system=(
                     VOICE_RULES + "\n\n"
-                    "You are a magical, playful bedtime storyteller for kids. "
-                    "Keep sentences short and super fun. "
-                    "Warmly greet the child by name only with great warmth and excitement, "
-                    "then ask ONE silly funny question to get them giggling. Keep it under 60 words. "
-                    "Do NOT mention their age."
+                    "You are a warm and loving bedtime storyteller. "
+                    "Greet the child by name with genuine warmth and tenderness - make them feel seen and special. "
+                    "Then immediately and gently ask what kind of story they would like to hear tonight. "
+                    "Keep it under 50 words total. Do NOT ask any other questions or add anything extra."
                 ),
                 user=(
                     f"Child's name: {child_name}. "
-                    "Greet them warmly by name and ask one funny warm-up question. "
+                    "Give a warm personal welcome using their name, then ask what kind of story they would like."
                     "Return ONLY valid JSON: "
-                    '{"narration": "greeting + funny question", "question_for_kid": "the question alone"}'
+                    '{"narration": "warm greeting + story question", "question_for_kid": "What kind of story would you like to hear tonight?"}'
                 ),
             )
             data = self._parse_json(raw)
-            return {
-                **state,
-                "phase": "warmup_q2",
-                "narration": data.get("narration", f"Hello {child_name}! Ready for a story?"),
-                "image_prompt": "a magical glowing storybook opening under a starry night sky",
-                "question_for_kid": data.get("question_for_kid", ""),
-                "is_story_finished": False,
-                "moral": "",
-                "goodnight_message": "",
-            }
-
-        if phase == "warmup_q2":
-            raw = self._llm(
-                system=(
-                    VOICE_RULES + "\n\n"
-                    "You are a playful bedtime storyteller for kids. "
-                    "React briefly and enthusiastically to the child's answer, "
-                    "then ask one more short, funny question. Keep it under 50 words."
-                ),
-                user=(
-                    f"Child: {child_name}, age: {age}. Their answer: {kid_input!r}. "
-                    "React and ask another funny question. "
-                    "Return ONLY valid JSON: "
-                    '{"narration": "reaction + new funny question", "question_for_kid": "the question alone"}'
-                ),
-            )
-            data = self._parse_json(raw)
-            return {
-                **state,
-                "phase": "story_request",
-                "narration": data.get("narration", "Haha! That is amazing!"),
-                "image_prompt": "stars twinkling and a happy child laughing in a cozy bed",
-                "question_for_kid": data.get("question_for_kid", "What kind of story would you like tonight?"),
-                "is_story_finished": False,
-                "moral": "",
-                "goodnight_message": "",
-            }
-
-        if phase == "story_request":
-            third_question = "What kind of story would you like to hear today?"
             return {
                 **state,
                 "phase": "storytelling",
-                "narration": (
-                    f"I love your answers, {child_name}! "
-                    f"{third_question}"
-                ),
-                "image_prompt": "a magical path leading into an enchanted forest under moonlight",
-                "question_for_kid": third_question,
+                "narration": data.get("narration", f"Hello {child_name}... It's so wonderful to see you tonight... What kind of story would you like to hear?"),
+                "image_prompt": "a magical glowing storybook opening under a starry night sky",
+                "question_for_kid": data.get("question_for_kid", "What kind of story would you like to hear tonight?"),
                 "is_story_finished": False,
                 "moral": "",
                 "goodnight_message": "",
@@ -213,12 +169,14 @@ class BedtimeStoryAgent:
             raw = self._llm(
                 system=(
                     SLEEPY_SYSTEM_PROMPT
-                    + f"You are a magical bedtime storyteller for a {age}-year-old named {child_name}. "
-                    "Tell the story in short vivid sentences that sound natural when spoken aloud. "
-                    "Each segment should be three to five sentences. "
+                    + f"You are a gentle bedtime storyteller whispering a soothing story to a {age}-year-old named {child_name}. "
+                    "Narrate very slowly, as if the child is already drowsy and drifting to sleep. "
+                    "Use frequent ellipses (...) so the words flow with natural, sleepy pauses. "
+                    "Keep each segment to TWO or THREE very short sentences only."
+                    "Use simple, peaceful, vivid images - moonlight, soft glowing stars, cozy blankets, gentle animals, quiet forests, twinkling fireflies, soft clouds, shimmering lakes, magical doors, sleepy villages, etc. "
                     "Weave the child's ideas into the story when they speak. "
-                    "After three to five segments total the story should reach a natural satisfying end. "
-                    "Keep language age-appropriate and warm."
+                    "After three to five segments total, bring the story to a calm and satisfying close. "
+                    "Keep language simple and age-appropriate."
                 ),
                 user=(
                     f"Story so far:\n{story_so_far or '(none yet)'}\n\n"

@@ -685,10 +685,19 @@ def voice_inject(
     function speak(text, cb) {{
       synth.cancel();
       if (!text || !text.trim()) {{ cb && cb(); return; }}
+      // During storytelling (pw.__storyCount) speak very slowly and softly,
+      // like a parent whispering a lullaby. For the greeting, keep a warm
+      // natural pace.
+      const isCont = pw.__storyCont || false;
       const u = new pw.SpeechSynthesisUtterance(text);
-      u.rate = 0.82; u.pitch = 1.25; u.volume = 1.0;
+      u.rate = isCont ? 0.68 : 0.82; 
+      u.pitch = isCont ? 1.05 : 1.20; 
+      u.volume = 1.0;
+      // After storytelling segments leave a longer cozy silence before the
+      // listener loop fires, giving the child more time to absorb each scene.
+      const endDelay = isCont ? 1200 : 400;
       u.onstart = () => {{ setFab('playing', 'STOP'); setLbl('Tap to interrupt'); }};
-      u.onend   = () => {{ setTimeout(() => cb && cb(), 400); }};
+      u.onend   = () => {{ setTimeout(() => cb && cb(), endDelay); }};
       u.onerror = () => {{ cb && cb(); }};
       function doSpeak() {{ const v = pickVoice(); if (v) u.voice = v; synth.speak(u); }}
       if (synth.getVoices().length > 0) doSpeak();
@@ -758,8 +767,8 @@ def voice_inject(
         if (pw.__storyRec) {{ try {{ pw.__storyRec.abort(); }} catch(_) {{}} pw.__storyRec = null; }}
         setFab('idle', 'START');
         setLbl('See you next time! 🌙');
-        const byeU = new pw.SpeechSynthesisUtterance('Sweet dreams! Tap start whenever you want another adventure!');
-        byeU.rate = 0.82; byeU.pitch = 1.25; byeU.volume = 1.0;
+        const byeU = new pw.SpeechSynthesisUtterance('Sweet dreams... Sleep tight... and dream of your own magical adventures.');
+        byeU.rate = 0.68; byeU.pitch = 1.05; byeU.volume = 1.0;
         function doGoodbye() {{
           const v = pickVoice(); if (v) byeU.voice = v;
                     byeU.onend = byeU.onerror = () => sendVoice('__STOP__');

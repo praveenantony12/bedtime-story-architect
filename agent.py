@@ -170,27 +170,16 @@ class BedtimeStoryAgent:
             }
 
         if phase == "story_request":
-            raw = self._llm(
-                system=(
-                    VOICE_RULES + "\n\n"
-                    "You are a warm bedtime storyteller. The child has answered your fun warm-up questions. "
-                    "React briefly to their last answer, then ask them what story they would like. "
-                    "Keep it under 40 words, make it exciting."
-                ),
-                user=(
-                    f"Child: {child_name}, age: {age}. Last answer: {kid_input!r}. "
-                    "Ask what story they would like tonight. "
-                    "Return ONLY valid JSON: "
-                    '{"narration": "bridging text + story question", "question_for_kid": "the question alone"}'
-                ),
-            )
-            data = self._parse_json(raw)
+            third_question = "What kind of story would you like to hear today?"
             return {
                 **state,
                 "phase": "storytelling",
-                "narration": data.get("narration", "So, what story shall we tell tonight?"),
+                "narration": (
+                    f"I love your answers, {child_name}! "
+                    f"{third_question}"
+                ),
                 "image_prompt": "a magical path leading into an enchanted forest under moonlight",
-                "question_for_kid": data.get("question_for_kid", "What story would you like tonight?"),
+                "question_for_kid": third_question,
                 "is_story_finished": False,
                 "moral": "",
                 "goodnight_message": "",

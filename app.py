@@ -1,7 +1,6 @@
 import base64
 import json
 import os
-import random
 import re
 import uuid
 from io import BytesIO
@@ -17,30 +16,6 @@ load_dotenv()
 
 APP_TITLE = "Dream Story Time"
 SESSION_FILE = ".story_session.json"
-
-AGE_FACTS = {
-    "small": [
-        "Did you know? Owls can turn their heads a lot to look around at night.",
-        "Funny fact: A group of flamingos is called a flamboyance.",
-        "Space fact: The Moon has little moonquakes, just like tiny earthquakes.",
-        "Nature fact: Honey never spoils, even after many years.",
-        "Animal fact: Sea otters hold hands while they sleep.",
-    ],
-    "medium": [
-        "Brain fact: Your brain uses about as much energy as a small light bulb.",
-        "Ocean fact: Some jellyfish glow in the dark.",
-        "Space fact: A day on Venus is longer than a year on Venus.",
-        "Animal fact: Octopuses have three hearts.",
-        "History fact: Ancient people used stars to navigate at night.",
-    ],
-    "big": [
-        "Science fact: Lightning can heat the air hotter than the surface of the sun.",
-        "Space fact: Neutron stars can spin hundreds of times each second.",
-        "Nature fact: Trees can share nutrients through underground fungal networks.",
-        "Body fact: Your bones are constantly rebuilding themselves.",
-        "Tech fact: The first computer bug was an actual moth.",
-    ],
-}
 
 
 # ── Persistence ───────────────────────────────────────────────────────────────
@@ -80,42 +55,6 @@ def save_session() -> None:
         "moral": st.session_state.get("moral", ""),
         "goodnight": st.session_state.get("goodnight", ""),
     })
-
-
-def _age_bucket(age: int) -> str:
-    if age <= 6:
-        return "small"
-    if age <= 9:
-        return "medium"
-    return "big"
-
-
-def _ensure_age_facts(age: int) -> None:
-    bucket = _age_bucket(age)
-    if st.session_state.get("facts_bucket") == bucket and st.session_state.get("facts_list"):
-        return
-    facts = AGE_FACTS[bucket][:]
-    random.shuffle(facts)
-    st.session_state["facts_bucket"] = bucket
-    st.session_state["facts_list"] = facts
-    st.session_state["facts_idx"] = 0
-
-
-def get_fun_fact(age: int) -> str:
-    """Return the next age-appropriate fun fact and advance the index."""
-    _ensure_age_facts(age)
-    facts = st.session_state.get("facts_list", [])
-    if not facts:
-        return ""
-    idx = st.session_state.get("facts_idx", 0)
-    fact = facts[idx % len(facts)]
-    st.session_state["facts_idx"] = idx + 1
-    return fact
-
-
-def next_loading_message(base: str, age: int) -> str:
-    fact = get_fun_fact(age)
-    return f"{base}  ✨ {fact}" if fact else base
 
 
 def save_profile_to_local_storage(child_name: str, age: int) -> None:
@@ -775,19 +714,37 @@ def voice_inject(
         const result = (txt || '').trim();
         if (result) sendVoice(result);
         else if (timeoutMs) sendVoice('__CONTINUE__');
-        else {{ setFab('playing', 'STOP'); setLbl('Tap to talk'); }}  // no auto-continue
+                else {{ setFab('idle', 'START'); setLbl('Tap to answer'); }}  // wait until kid speaks
       }}
       rec.onresult = (e) => finish(e.results[0][0].transcript);
-      rec.onerror  = (e) => {{ if (e.error !== 'no-speech') finish(''); else {{ /* timeout will handle it */ }} }};
+            rec.onerror  = (e) => {{
+                const err = (e && e.error) || '';
+                if (err === 'no-speech') return;  // timeout handles this
+                if (err === 'not-allowed' || err === 'service-not-allowed' || err === 'audio-capture') {{
+                    done = true;
+                    clearTimeout(timer);
+                    pw.__storyRec = null;
+                    setFab('idle', 'START');
+                    setLbl('Please allow microphone');
+                    return;
+                }}
+                finish('');
+            }};
       rec.onend    = () => {{ if (!done) finish(''); }};
       try {{
         rec.start();
         if (timeoutMs) timer = setTimeout(() => finish(''), timeoutMs);
-      }} catch(err) {{ finish(''); }}
+            }} catch(err) {{
+                done = true;
+                clearTimeout(timer);
+                pw.__storyRec = null;
+                setFab('idle', 'START');
+                setLbl('Tap to try again');
+            }}
     }}
 
     pw.__storyGo = function() {{
-      speak(pw.__storyText || '', () => listenThen(5000));
+            speak(pw.__storyText || '', () => listenThen(pw.__storyCont ? 5000 : 0));
     }};
 
     // ── FAB click logic ───────────────────────────────────────────────────
@@ -1020,7 +977,6 @@ def main() -> None:
                 st.session_state["goodnight"] = ""
                 st.session_state["has_shown_voice"] = False
                 st.session_state["speak_trigger"] = False
-                st.session_state["speech_bridge"] = ""
                 st.session_state["voice_reset"] = True
                 st.session_state["profile_panel_open"] = False
                 st.session_state["close_profile_expander"] = True
@@ -1030,7 +986,7 @@ def main() -> None:
 
     # ── AUTO-GREETING (first turn of this session) ────────────────────────────
     if not st.session_state["greeting_done"]:
-        with st.spinner(next_loading_message("Waking up the story magic...", age)):
+        with st.spinner("Waking up the story magic..."):
             state = run_agent_turn(agent, thread_id, "greeting", child_name, age, "", "")
         _apply_state(state)
         # No speak_trigger here - user must tap START to begin the first greeting
@@ -1045,41 +1001,27 @@ def main() -> None:
         save_session()
         st.rerun()
     elif voice_input == "__CONTINUE__":
-        # 5-second timeout fired - advance with an empty (or default) answer
+        # Auto-continue only when a story is already in progress.
+        # During questions (including "what kind of story"), wait for kid input.
         phase_now = st.session_state.get("phase", "greeting")
         story_now = st.session_state.get("story_so_far", "").strip()
-        if phase_now != "greeting":
-            # When waiting for a story choice and nothing was said, pick a default
-            default_input = ""
-            if phase_now == "storytelling" and not story_now:
-                default_input = "surprise me with a story"
-            fun_fact = get_fun_fact(age)
-            spinner_msg = (
-                f"Getting the next part ready... Here's a fun fact while you wait: {fun_fact}"
-                if fun_fact else "Getting the next part ready..."
-            )
-            with st.spinner(spinner_msg): 
+        if phase_now == "storytelling" and story_now:
+            with st.spinner("Getting the next part ready..."):
                 state = run_agent_turn(
                     agent, thread_id,
                     phase=phase_now,
                     child_name=child_name,
                     age=age,
-                    kid_input=default_input,
+                    kid_input="",
                     story_so_far=st.session_state.get("story_so_far", ""),
                 )
             _apply_state(state)
             st.session_state["has_shown_voice"] = True
             st.session_state["speak_trigger"] = True   # one-shot: auto-play this new narration
-            st.session_state["speech_bridge"] = fun_fact  # narrate the fun fact before the story
             save_session()
         st.rerun()
     elif voice_input:
-        fun_fact = get_fun_fact(age)
-        spinner_msg = (
-            f"Thinking of the next part of your story... Here's a fun fact while you wait: {fun_fact}"
-            if fun_fact else "Thinking of the next part of your story..."
-        )
-        with st.spinner(spinner_msg):
+        with st.spinner("Thinking of the next part of your story..."):
             state = run_agent_turn(
                 agent, thread_id,
                 phase=st.session_state["phase"],
@@ -1091,7 +1033,6 @@ def main() -> None:
         _apply_state(state)
         st.session_state["has_shown_voice"] = True
         st.session_state["speak_trigger"] = True   # one-shot: auto-play this new narration
-        st.session_state["speech_bridge"] = fun_fact  # narrate the fun fact before the story
         save_session()
         st.rerun()
 
@@ -1105,7 +1046,7 @@ def main() -> None:
     new_prompt  = st.session_state.get("current_image_prompt", "")
     last_prompt = st.session_state.get("last_fetched_prompt", "")
     if new_prompt and new_prompt != last_prompt:
-        with st.spinner(next_loading_message("Painting your scene...", age)):
+        with st.spinner("Painting your scene..."):
             img_bytes = fetch_story_image(new_prompt)
         new_b64 = base64.b64encode(img_bytes).decode()
         st.session_state["current_image_b64"]   = new_b64
@@ -1123,15 +1064,12 @@ def main() -> None:
     force_reset = st.session_state.pop("voice_reset", False)
     is_idle = not st.session_state.get("has_shown_voice", False)
     phase   = st.session_state.get("phase", "greeting")
-    # Prepend the fun fact that was shown while loading so kids hear it too.
-    bridge  = st.session_state.pop("speech_bridge", "")
-    narration_txt = st.session_state.get("current_narration", "")
-    text_to_speak = f"{bridge} ... {narration_txt}" if bridge else narration_txt
+    is_cont = phase == "storytelling" and bool(st.session_state.get("story_so_far", "").strip())
     voice_inject(
-        text_to_speak=text_to_speak,
+        text_to_speak=st.session_state.get("current_narration", ""),
         is_idle=is_idle,
         auto_start=auto,
-        is_continuous=False,  # JS always use 5-second timeout now
+        is_continuous=is_cont,
         force_reset=force_reset,
     )
 

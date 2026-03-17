@@ -192,6 +192,10 @@ def ensure_session_defaults(
 
 def inject_css() -> None:
     st.markdown(
+        '<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
         """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;700;900&display=swap');

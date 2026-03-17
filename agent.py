@@ -183,9 +183,8 @@ class BedtimeStoryAgent:
                     f"{situation}\n\n"
                     "Return ONLY valid JSON:\n"
                     "{\n"
-                    '  "narration": "the next story segment, three to five sentences",\n'
+                    '  "narration": "the next story segment, two to three short sentences",\n'
                     '  "image_prompt": "a short vivid illustration description for this scene",\n'
-                    '  "question_for_kid": "a short optional question to engage the child, or empty string",\n'
                     '  "is_finished": true or false\n'
                     "}"
                 ),
@@ -211,14 +210,40 @@ class BedtimeStoryAgent:
             affirmatives = {"yes", "yeah", "yep", "sure", "please", "more", "continue", "ok", "okay", "yay", "another"}
             wants_more = any(w in kid_input.lower() for w in affirmatives) if kid_input else False
             if wants_more:
+                # Generate the opening scene of a new continuation story right here so
+                # story_so_far is non-empty - this makes is_cont=True in the UI and lets
+                # the narration flow automatically without asking the kid "what story next?"
+                raw = self._llm(
+                    system=(
+                        SLEEPY_SYSTEM_PROMPT
+                        + f"You are a gentle bedtime storyteller for a {age}-year-old named {child_name}. "
+                         "Begin a brand-new short bedtime adventure. "
+                         "Write only the quiet, cozy opening scene in TWO very short sentences. "
+                         "Use dreamy, sleepy imagery."
+                    ),
+                    user=(
+                        "Start a gentle surprise bedtime adventure. "
+                        "Return ONLY valid JSON:\n"
+                        "{\n"
+                        '  "narration": "opening scene, two short sleepy sentences",\n'
+                        '  "image_prompt": "a short valid description for the opening scene"\n'
+                        "}"
+                    ),
+                    temperature=0.85,
+                )
+                data = self._parse_json(raw)
+                first_segment = data.get(
+                    "narration",
+                    f"Once upon a time... in a land of soft moonlight... a new adventure was just beginning...",
+                )
                 return {
                     **state,
                     "phase": "storytelling",
-                    "story_so_far": "",
+                    "story_so_far": first_segment,
                     "kid_input": "",
-                    "narration": f"Yay! Let's go on another adventure, {child_name}! What shall we explore next?",
-                    "image_prompt": "a new magical door opening into a shimmering glowing world",
-                    "question_for_kid": "What kind of story would you like next?",
+                    "narration": first_segment,
+                    "image_prompt": data.get("image_prompt", "a new magical door opening into a shimmering glowing world"),
+                    "question_for_kid": "",
                     "is_story_finished": False,
                     "moral": "",
                     "goodnight_message": "",

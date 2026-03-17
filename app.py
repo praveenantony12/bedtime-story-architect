@@ -54,6 +54,7 @@ def save_session() -> None:
         "is_ending": st.session_state.get("is_ending", False),
         "moral": st.session_state.get("moral", ""),
         "goodnight": st.session_state.get("goodnight", ""),
+        "yes_count": st.session_state.get("yes_count", 0),
     })
 
 
@@ -166,6 +167,7 @@ def ensure_session_defaults(
         st.session_state["is_ending"] = sess.get("is_ending", False)
         st.session_state["moral"] = sess.get("moral", "")
         st.session_state["goodnight"] = sess.get("goodnight", "")
+        st.session_state["yes_count"] = sess.get("yes_count", 0)
         st.session_state["has_shown_voice"] = True  # no delay after voice nav
     else:
         # Fresh open — start a clean story session (profile is preserved)
@@ -180,6 +182,7 @@ def ensure_session_defaults(
         st.session_state["is_ending"] = False
         st.session_state["moral"] = ""
         st.session_state["goodnight"] = ""
+        st.session_state["yes_count"] = 0
         st.session_state["has_shown_voice"] = False
 
     st.session_state["session_loaded"] = True
@@ -535,6 +538,7 @@ def voice_inject(
     auto_start: bool = False,
     is_continuous: bool = False,
     force_reset: bool = False,
+    auto_stop: bool = False,
 ) -> None:
     clean = (
         clean_for_tts(text_to_speak)
@@ -543,10 +547,11 @@ def voice_inject(
         .replace('"', "'")
         .replace("\n", " ")
     )
-    auto_js    = "true" if auto_start else "false"
-    is_idle_js = "true" if is_idle else "false"
-    is_cont_js = "true" if is_continuous else "false"
-    force_reset_js = "true" if force_reset else "false"
+    auto_js         = "true" if auto_start else "false"
+    is_idle_js      = "true" if is_idle else "false"
+    is_cont_js      = "true" if is_continuous else "false"
+    force_reset_js  = "true" if force_reset else "false"
+    auto_stop_js    = "true" if auto_stop else "false"
 
     bridge_html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>
 <script>
@@ -554,8 +559,9 @@ def voice_inject(
   const TEXT        = `{clean}`;
   const AUTO        = {auto_js};
   const IS_IDLE     = {is_idle_js};
-  const IS_CONT     = {is_cont_js};   // continuous mode: auto-listen after TTS
-    const FORCE_RESET = {force_reset_js};
+  const IS_CONT     = {is_cont_js};
+  const FORCE_RESET = {force_reset_js};
+  const AUTO_STOP   = {auto_stop_js}; // after TTS, auto-send __STOP__ (ending sequence)
   const pw = window.parent;
   const pd = pw.document;
 
@@ -753,7 +759,16 @@ def voice_inject(
     }}
 
     pw.__storyGo = function() {{
-            speak(pw.__storyText || '', () => listenThen(pw.__storyCont ? 5000 : 0));
+        if (pw.__storyAutoStop) {{
+            // Ending narration: after TTS finishes, auto-reset so the app returns to START
+            speak(pw.__storyText || '', () => sendVoice('__STOP__'));
+        }} else if (pw.__storyCont) {{
+            // Story in progress: skip listening entirely, jump straight to next segment
+            speak(pw.__storyText || '', () => sendVoice('__CONTINUE__'));
+        }} else {{
+            // Waiting for kid input (greeting question or want-more yes/no)
+            speak(pw.__storyText || '', () => listenThen(0));
+        }}
     }};
 
     // ── FAB click logic ───────────────────────────────────────────────────
@@ -787,9 +802,10 @@ def voice_inject(
 
   }} // end install-once
 
-  // ── Per-render: update text, continuous flag, and FAB state ──────────
-  pw.__storyText = TEXT;
-  pw.__storyCont = IS_CONT;
+  // ── Per-render: update text, continuous flag, auto-stop flag, and FAB state ──────────
+  pw.__storyText     = TEXT;
+  pw.__storyCont     = IS_CONT;
+  pw.__storyAutoStop = AUTO_STOP;
 
   const fab = pd.getElementById('__sfab');
   const lbl = pd.getElementById('__sfab-lbl');
@@ -825,7 +841,7 @@ def _apply_state(state: dict) -> None:
     goodnight    = state.get("goodnight_message", "")
     is_ending    = new_phase == "ending"
 
-    if new_phase == "storytelling":
+    if new_phase in ("storytelling", "want_more"):
         st.session_state["story_so_far"] = state.get(
             "story_so_far", st.session_state.get("story_so_far", "")
         )
@@ -854,6 +870,7 @@ def _clear_story_state() -> None:
         "is_ending": False,
         "moral": "",
         "goodnight": "",
+        "yes_count": 0,
         "has_shown_voice": False,
     })
     _write_json(SESSION_FILE, {})
@@ -936,6 +953,7 @@ def main() -> None:
                     "is_ending": False,
                     "moral": "",
                     "goodnight": "",
+                    "yes_count": 0,
                     "has_shown_voice": False,
                 })
                 save_profile_to_local_storage(name.strip(), int(age_val))
@@ -989,6 +1007,7 @@ def main() -> None:
                 st.session_state["voice_reset"] = True
                 st.session_state["profile_panel_open"] = False
                 st.session_state["close_profile_expander"] = True
+                st.session_state["yes_count"] = 0
                 save_profile_to_local_storage(edit_name.strip(), int(edit_age))
                 save_session()
                 st.rerun()
@@ -1024,21 +1043,54 @@ def main() -> None:
                     kid_input="",
                     story_so_far=st.session_state.get("story_so_far", ""),
                 )
+            # If the story just finished and the kid has used all 3 "yes" turns,
+            # skip asking "want more?" and auto-generate the goodnight ending.
+            if state.get("phase") == "want_more" and st.session_state.get("yes_count", 0) >= 3:
+                with st.spinner("Wrapping up the story..."):
+                    state = run_agent_turn(
+                        agent, thread_id,
+                        phase="want_more",
+                        child_name=child_name,
+                        age=age,
+                        kid_input="no",
+                        story_so_far=st.session_state.get("story_so_far", st.session_state.get("story_so_far", "")),
+                    )
             _apply_state(state)
             st.session_state["has_shown_voice"] = True
             st.session_state["speak_trigger"] = True   # one-shot: auto-play this new narration
             save_session()
         st.rerun()
     elif voice_input:
-        with st.spinner("Thinking of the next part of your story..."):
-            state = run_agent_turn(
-                agent, thread_id,
-                phase=st.session_state["phase"],
-                child_name=child_name,
-                age=age,
-                kid_input=voice_input,
-                story_so_far=st.session_state.get("story_so_far", ""),
+        phase_now = st.session_state.get("phase", "greeting")
+        affirmatives = {"yes", "yeah", "yep", "sure", "of course", "definitely", "please", "let's go", "ok", "okay"}
+        is_yes = any(w in voice_input.lower() for w in affirmatives)
+        if phase_now == "want_more":
+            yes_count = st.session_state.get("yes_count", 0)
+            # Treat as "no" if the kid says yes but has already used all 3 continuation turns
+            if is_yes and yes_count < 3:
+                st.session_state["yes_count"] = yes_count + 1
+                effective_input = voice_input
+            else:
+                effective_input = "no"
+            with st.spinner("Getting the next part ready..."):
+                state = run_agent_turn(
+                    agent, thread_id,
+                    phase="want_more",
+                    child_name=child_name,
+                    age=age,
+                    kid_input=effective_input,
+                    story_so_far=st.session_state.get("story_so_far", ""),
             )
+        else:
+            with st.spinner("Thinking of the next part of your story..."):
+                state = run_agent_turn(
+                    agent, thread_id,
+                    phase=phase_now,
+                    child_name=child_name,
+                    age=age,
+                    kid_input=voice_input,
+                    story_so_far=st.session_state.get("story_so_far", ""),
+                )
         _apply_state(state)
         st.session_state["has_shown_voice"] = True
         st.session_state["speak_trigger"] = True   # one-shot: auto-play this new narration
@@ -1069,17 +1121,23 @@ def main() -> None:
     #
     # speak_trigger is a ONE-SHOT flag: set only when new narration arrives
     # consumed (popped) here so subsequent renders don't re-trigger the same narration (double fire TTS).
-    auto    = st.session_state.pop("speak_trigger", False)
+    auto        = st.session_state.pop("speak_trigger", False)
     force_reset = st.session_state.pop("voice_reset", False)
-    is_idle = not st.session_state.get("has_shown_voice", False)
-    phase   = st.session_state.get("phase", "greeting")
-    is_cont = phase == "storytelling" and bool(st.session_state.get("story_so_far", "").strip())
+    is_idle     = not st.session_state.get("has_shown_voice", False)
+    phase       = st.session_state.get("phase", "greeting")
+    is_ending   = st.session_state.get("is_ending", False)
+    is_cont     = phase == "storytelling" and bool(st.session_state.get("story_so_far", "").strip())
+    # Speak both the narration AND the question (e.g. "Would you like to hear more?")
+    narration_text = st.session_state.get("current_narration", "")
+    question_text = st.session_state.get("current_question", "")
+    tts_text = f"{narration_text} {question_text}".strip() if question_text else narration_text
     voice_inject(
-        text_to_speak=st.session_state.get("current_narration", ""),
+        text_to_speak=tts_text,
         is_idle=is_idle,
         auto_start=auto,
         is_continuous=is_cont,
         force_reset=force_reset,
+        auto_stop=is_ending,  # after TTS finishes, auto-send __STOP__ to reset for next story
     )
 
 

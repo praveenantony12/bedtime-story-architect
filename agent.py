@@ -23,7 +23,7 @@ VOICE_RULES = (
     "NEVER use emojis, hashtags, asterisks, bullet points, or any symbols. "
     "Spell out all numbers as words (e.g. 'three' not '3'). "
     "Sound warm, gentle, and loving - like a caring parent or grandparent at bedtime. "
-    "Keep each response to two or three sentences maximum."
+    "Keep each response to four or five sentences maximum."
 )
 
 SLEEPY_SYSTEM_PROMPT = """
@@ -36,7 +36,7 @@ VOICE SYNTHESIS RULES (CRITICAL):
 3. Use DASHES (—) for a soft, sleepy breath between thoughts.
 4. NEVER use symbols, emojis, asterisks, hashtags, or bullet points.
 5. Spell out ALL numbers: write 'three' not '3'.
-6. Keep responses to TWO or THREE short, simple sentences - speak slowly, leave room for silence.
+6. Keep responses to FOUR or FIVE short, simple sentences - speak slowly, leave room for silence.
 
 NARRATIVE STYLE:
 - Narrate in a very slow, whispering, lullaby like voice.
@@ -135,7 +135,7 @@ class BedtimeStoryAgent:
                 "phase": "storytelling",
                 "narration": data.get("narration", f"Hello {child_name}... It's so wonderful to see you tonight... What kind of story would you like to hear?"),
                 "image_prompt": "a magical glowing storybook opening under a starry night sky",
-                "question_for_kid": data.get("question_for_kid", "What kind of story would you like to hear tonight?"),
+                "question_for_kid": "",
                 "is_story_finished": False,
                 "moral": "",
                 "goodnight_message": "",
@@ -172,7 +172,7 @@ class BedtimeStoryAgent:
                     + f"You are a gentle bedtime storyteller whispering a soothing story to a {age}-year-old named {child_name}. "
                     "Narrate very slowly, as if the child is already drowsy and drifting to sleep. "
                     "Use frequent ellipses (...) so the words flow with natural, sleepy pauses. "
-                    "Keep each segment to TWO or THREE very short sentences only."
+                    "Keep each segment to FOUR or FIVE very short sentences only."
                     "Use simple, peaceful, vivid images - moonlight, soft glowing stars, cozy blankets, gentle animals, quiet forests, twinkling fireflies, soft clouds, shimmering lakes, magical doors, sleepy villages, etc. "
                     "Weave the child's ideas into the story when they speak. "
                     "After three to five segments total, bring the story to a calm and satisfying close. "
@@ -183,7 +183,7 @@ class BedtimeStoryAgent:
                     f"{situation}\n\n"
                     "Return ONLY valid JSON:\n"
                     "{\n"
-                    '  "narration": "the next story segment, two to three short sentences",\n'
+                    '  "narration": "the next story segment, four to five short sentences",\n'
                     '  "image_prompt": "a short vivid illustration description for this scene",\n'
                     '  "is_finished": true or false\n'
                     "}"
@@ -218,14 +218,14 @@ class BedtimeStoryAgent:
                         SLEEPY_SYSTEM_PROMPT
                         + f"You are a gentle bedtime storyteller for a {age}-year-old named {child_name}. "
                          "Begin a brand-new short bedtime adventure. "
-                         "Write only the quiet, cozy opening scene in TWO very short sentences. "
+                         "Write only the quiet, cozy opening scene in FOUR very short sentences. "
                          "Use dreamy, sleepy imagery."
                     ),
                     user=(
                         "Start a gentle surprise bedtime adventure. "
                         "Return ONLY valid JSON:\n"
                         "{\n"
-                        '  "narration": "opening scene, two short sleepy sentences",\n'
+                        '  "narration": "opening scene, four short sleepy sentences",\n'
                         '  "image_prompt": "a short valid description for the opening scene"\n'
                         "}"
                     ),

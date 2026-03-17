@@ -114,26 +114,32 @@ class BedtimeStoryAgent:
         story_so_far = state.get("story_so_far", "")
 
         if phase == "greeting":
+            # Ask the LLM for the warm greeting ONLY - no question.
+            # We append the story question ourselves so it is always present
+            # and always separated from the greeting by a clear ellipsis pause
             raw = self._llm(
                 system=(
                     VOICE_RULES + "\n\n"
                     "You are a warm and loving bedtime storyteller. "
-                    "Greet the child by name with genuine warmth and tenderness - make them feel seen and special. "
-                    "Then immediately and gently ask what kind of story they would like to hear tonight. "
-                    "Keep it under 50 words total. Do NOT ask any other questions or add anything extra."
+                    "Write ONLY a warm personal greeting for the child using their name. "
+                    "Make them feel special and welcomed. "
+                    "Do NOT ask any question. Do NOT mention stories. "
+                    "One or two short sentences only."
                 ),
                 user=(
                     f"Child's name: {child_name}. "
-                    "Give a warm personal welcome using their name, then ask what kind of story they would like."
-                    "Return ONLY valid JSON: "
-                    '{"narration": "warm greeting + story question", "question_for_kid": "What kind of story would you like to hear tonight?"}'
+                    "Return ONLY valid JSON with the greeting alone: "
+                    f'{{"greeting": "warm personal greeting using the child\'s name: {child_name}"}}'
                 ),
             )
             data = self._parse_json(raw)
+            greeting = data.get("greeting", f"Hello {child_name}... It's so wonderful to see you tonight...")
+            # Hardcode the pause + question here so it always comes after the greeting with a clear separation
+            narration = f"{greeting} ... What kind of story would you like to hear tonight?"
             return {
                 **state,
                 "phase": "storytelling",
-                "narration": data.get("narration", f"Hello {child_name}... It's so wonderful to see you tonight... What kind of story would you like to hear?"),
+                "narration": narration,
                 "image_prompt": "a magical glowing storybook opening under a starry night sky",
                 "question_for_kid": "",
                 "is_story_finished": False,

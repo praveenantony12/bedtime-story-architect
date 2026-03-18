@@ -55,6 +55,7 @@ def save_session() -> None:
         "moral": st.session_state.get("moral", ""),
         "goodnight": st.session_state.get("goodnight", ""),
         "yes_count": st.session_state.get("yes_count", 0),
+        "last_tts_text": st.session_state.get("last_tts_text", ""),
     })
 
 
@@ -168,6 +169,7 @@ def ensure_session_defaults(
         st.session_state["moral"] = sess.get("moral", "")
         st.session_state["goodnight"] = sess.get("goodnight", "")
         st.session_state["yes_count"] = sess.get("yes_count", 0)
+        st.session_state["last_tts_text"] = sess.get("last_tts_text", "")
         st.session_state["has_shown_voice"] = True  # no delay after voice nav
     else:
         # Fresh open — start a clean story session (profile is preserved)
@@ -183,6 +185,7 @@ def ensure_session_defaults(
         st.session_state["moral"] = ""
         st.session_state["goodnight"] = ""
         st.session_state["yes_count"] = 0
+        st.session_state["last_tts_text"] = ""
         st.session_state["has_shown_voice"] = False
 
     st.session_state["session_loaded"] = True
@@ -926,6 +929,7 @@ def _clear_story_state() -> None:
         "moral": "",
         "goodnight": "",
         "yes_count": 0,
+        "last_tts_text": "",
         "has_shown_voice": False,
     })
     _write_json(SESSION_FILE, {})
@@ -1117,7 +1121,15 @@ def main() -> None:
         st.rerun()
     elif voice_input:
         last_tts = st.session_state.get("last_tts_text", "")
-        if is_likely_voice_echo(last_tts, voice_input):
+        voice_norm = _normalize_voice_text(voice_input)
+        if (
+            is_likely_voice_echo(last_tts, voice_input)
+            or (
+                st.session_state.get("phase", "greeting") == "storytelling"
+                and not st.session_state.get("story_so_far", "").strip()
+                and "what kind of story would you like" in voice_norm
+            )
+        ):
             st.session_state["speak_trigger"] = False
             save_session()
             st.rerun()

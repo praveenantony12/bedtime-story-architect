@@ -636,6 +636,14 @@ def voice_inject(
     const l = pd.getElementById('__sfab-lbl'); if (l) l.textContent = t;
   }}
 
+    function canStartNow() {{
+        const now = Date.now();
+        const last = pw.__storyLastStartTs || 0;
+        if (now - last < 1800) return false;
+        pw.__storyLastStartTs = now;
+        return true;
+    }}
+
     if (FORCE_RESET) {{
         try {{ pw.speechSynthesis && pw.speechSynthesis.cancel(); }} catch(_) {{}}
         if (pw.__storyRec) {{ try {{ pw.__storyRec.abort(); }} catch(_) {{}} pw.__storyRec = null; }}
@@ -748,9 +756,20 @@ def voice_inject(
       u.onstart = () => {{ setFab('playing', 'STOP'); setLbl('Tap to interrupt'); }};
       u.onend   = () => {{ setTimeout(() => cb && cb(), endDelay); }};
       u.onerror = () => {{ cb && cb(); }};
-      function doSpeak() {{ const v = pickVoice(); if (v) u.voice = v; synth.speak(u); }}
-      if (synth.getVoices().length > 0) doSpeak();
-      else {{ synth.onvoiceschanged = () => {{ synth.onvoiceschanged = null; doSpeak(); }}; setTimeout(doSpeak, 500); }}
+            let hasSpoken = false;
+            function doSpeakOnce() {{
+                if (hasSpoken) return;
+                hasSpoken = true;
+                synth.onvoiceschanged = null;
+                const v = pickVoice();
+                if (v) u.voice = v;
+                synth.speak(u);
+            }}
+            if (synth.getVoices().length > 0) doSpeakOnce();
+            else {{
+                synth.onvoiceschanged = () => doSpeakOnce();
+                setTimeout(() => doSpeakOnce(), 500);
+            }}
     }}
 
     // Listen then send result (or __CONTINUE__ on timeout)
@@ -847,7 +866,11 @@ def voice_inject(
     fab.addEventListener('click', () => {{
       const cls = pd.getElementById('__sfab').className;
       // Small delay so initial dialogue isn't clipped by the browser
-      if (cls === 'idle')   {{ setTimeout(() => pw.__storyGo && pw.__storyGo(), 800); return; }}
+            if (cls === 'idle')   {{
+                if (!canStartNow()) return;
+                setTimeout(() => pw.__storyGo && pw.__storyGo(), 800);
+                return;
+            }}
       if (cls === 'playing') {{
         // Tap STOP → immediately switch to START and say goodbye
         synth.cancel();
@@ -856,13 +879,20 @@ def voice_inject(
         setLbl('See you next time! 🌙');
         const byeU = new pw.SpeechSynthesisUtterance('Sweet dreams... Sleep tight... and dream of your own magical adventures.');
         byeU.rate = 0.68; byeU.pitch = 1.05; byeU.volume = 1.0;
-        function doGoodbye() {{
-          const v = pickVoice(); if (v) byeU.voice = v;
+                let saidGoodbye = false;
+                function doGoodbyeOnce() {{
+                    if (saidGoodbye) return;
+                    saidGoodbye = true;
+                    synth.onvoiceschanged = null;
+                    const v = pickVoice(); if (v) byeU.voice = v;
                     byeU.onend = byeU.onerror = () => sendVoice('__STOP__');
-          synth.speak(byeU);
-        }}
-        if (synth.getVoices().length > 0) doGoodbye();
-        else {{ synth.onvoiceschanged = () => {{ synth.onvoiceschanged = null; doGoodbye(); }}; setTimeout(doGoodbye, 500); }}
+                    synth.speak(byeU);
+                }}
+                if (synth.getVoices().length > 0) doGoodbyeOnce();
+                else {{
+                    synth.onvoiceschanged = () => doGoodbyeOnce();
+                    setTimeout(() => doGoodbyeOnce(), 500);
+                }}
         return;
       }}
       if (cls === 'listening') {{

@@ -14,7 +14,7 @@ from agent import get_agent
 
 load_dotenv()
 
-APP_TITLE = "Dream Story Time"
+APP_TITLE = "Dream-Bot"
 SESSION_FILE = ".story_session.json"
 INTRO_IMAGE_FILE = os.path.join("static", "intro-page-image.png")
 
@@ -209,7 +209,15 @@ def ensure_session_defaults(
 
 def inject_css() -> None:
     st.markdown(
-        '<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">',
+        '<link rel="manifest" href="/static/manifest.json">',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<link rel="icon" type="image/png" href="/static/dream-bot.png">',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<link rel="apple-touch-icon" href="/static/dream-bot.png">',
         unsafe_allow_html=True,
     )
     st.markdown(
@@ -1083,7 +1091,7 @@ def _load_intro_image_bytes() -> bytes | None:
 # ── Main ───────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    st.set_page_config(page_title=APP_TITLE, page_icon="static/icon-192.png", layout="centered")
+    st.set_page_config(page_title=APP_TITLE, page_icon="static/dream-bot.png", layout="centered")
     inject_css()
     bootstrap_profile_from_local_storage()
 
@@ -1112,7 +1120,7 @@ def main() -> None:
         st.markdown(
             """
             <div class="welcome-card">
-              <div class="welcome-title">&#127769; Dream Story Time</div>
+                            <div class="welcome-title">&#127769; Dream-Bot</div>
               <div class="welcome-subtitle">A magical bedtime adventure just for you!</div>
             </div>
             """,
@@ -1162,7 +1170,7 @@ def main() -> None:
     st.markdown(
         f'<div style="text-align:center;font-family:\'Fredoka One\',cursive;'
         f'font-size:2rem;color:#f5e6ff;text-shadow:0 0 20px rgba(200,150,255,.7);'
-        f'margin-bottom:.2rem;">&#127769; Dream Story Time</div>'
+        f'margin-bottom:.2rem;">&#127769; Dream-Bot</div>'
         f'<div style="text-align:center;color:#c8a8f0;font-size:.95rem;margin-bottom:1.2rem;">'
         f'Hello, <b>{child_name}</b>! Your magical adventure awaits...</div>',
         unsafe_allow_html=True,

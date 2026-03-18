@@ -1,35 +1,17 @@
 {
-  "name": "Dream Story Time",
-  "short_name": "DreamStory",
+  "name": "Dream-Bot",
+  "short_name": "Dream-Bot",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#030212",
   "theme_color": "#7c3aed",
-  "description": "A magical bedtime story app for kids, powered by AI.",
+  "description": "Dream-Bot: magical bedtime stories for kids, powered by AI.",
   "icons": [
     {
-      "src": "/static/icon-192.png",
-      "sizes": "192x192",
+      "src": "/static/dream-bot.png",
+      "sizes": "1024x1024",
       "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/static/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/static/apple-touch-icon.png",
-      "sizes": "180x180",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/static/icon-512-maskable.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
+      "purpose": "any maskable"
     }
   ]
 }

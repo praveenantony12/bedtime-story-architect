@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from typing import Any, Literal, Optional, TypedDict
 
@@ -23,7 +24,7 @@ VOICE_RULES = (
     "NEVER use emojis, hashtags, asterisks, bullet points, or any symbols. "
     "Spell out all numbers as words (e.g. 'three' not '3'). "
     "Sound warm, gentle, and loving - like a caring parent or grandparent at bedtime. "
-    "Keep each response to four or five sentences maximum."
+    "Keep each response gentle and easy to follow."
 )
 
 SLEEPY_SYSTEM_PROMPT = """
@@ -36,7 +37,7 @@ VOICE SYNTHESIS RULES (CRITICAL):
 3. Use DASHES (—) for a soft, sleepy breath between thoughts.
 4. NEVER use symbols, emojis, asterisks, hashtags, or bullet points.
 5. Spell out ALL numbers: write 'three' not '3'.
-6. Keep responses to FOUR or FIVE short, simple sentences - speak slowly, leave room for silence.
+6. Keep responses to SIX or SEVEN short, simple sentences - speak slowly, leave room for silence.
 
 NARRATIVE STYLE:
 - Narrate in a very slow, whispering, lullaby like voice.
@@ -47,6 +48,18 @@ NARRATIVE STYLE:
 - Use gentle 'sleep words': moonlight, soft, cozy, snuggly, quiet, dreamy, twinkling, glowing, peaceful, gentle, calm, sleepy, drowsy.
 - If the kid says 'yes' for more, gently continue. If 'no', give a loving sleepy farewell and end the story.
 """
+
+
+def _remove_question_sentences(text: str) -> str:
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return ""
+    pieces = re.split(r"(?<=[.!?])\s+", cleaned)
+    kept = [segment for segment in pieces if "?" not in segment]
+    result = " ".join(kept).strip()
+    if not result and "?" in cleaned:
+        result = cleaned.split("?", 1)[0].strip()
+    return result
 
 
 class StoryState(TypedDict, total=False):
@@ -134,6 +147,9 @@ class BedtimeStoryAgent:
             )
             data = self._parse_json(raw)
             greeting = data.get("greeting", f"Hello {child_name}... It's so wonderful to see you tonight...")
+            greeting = _remove_question_sentences(greeting)
+            if not greeting:
+                greeting = f"Hello {child_name}... It's so wonderful to see you tonight..."
             # Hardcode the pause + question here so it always comes after the greeting with a clear separation
             narration = f"{greeting} ... What kind of story would you like to hear tonight?"
             return {
@@ -178,10 +194,10 @@ class BedtimeStoryAgent:
                     + f"You are a gentle bedtime storyteller whispering a soothing story to a {age}-year-old named {child_name}. "
                     "Narrate very slowly, as if the child is already drowsy and drifting to sleep. "
                     "Use frequent ellipses (...) so the words flow with natural, sleepy pauses. "
-                    "Keep each segment to FOUR or FIVE very short sentences only."
+                    "Keep each segment to SIX or SEVEN short sentences so each scene feels complete. "
                     "Use simple, peaceful, vivid images - moonlight, soft glowing stars, cozy blankets, gentle animals, quiet forests, twinkling fireflies, soft clouds, shimmering lakes, magical doors, sleepy villages, etc. "
                     "Weave the child's ideas into the story when they speak. "
-                    "After three to five segments total, bring the story to a calm and satisfying close. "
+                    "After two to four segments total, bring the story to a calm and satisfying close. "
                     "Keep language simple and age-appropriate."
                 ),
                 user=(
@@ -189,7 +205,7 @@ class BedtimeStoryAgent:
                     f"{situation}\n\n"
                     "Return ONLY valid JSON:\n"
                     "{\n"
-                    '  "narration": "the next story segment, four to five short sentences",\n'
+                    '  "narration": "the next story segment, six to seven short sentences",\n'
                     '  "image_prompt": "a short vivid illustration description for this scene",\n'
                     '  "is_finished": true or false\n'
                     "}"
@@ -224,14 +240,14 @@ class BedtimeStoryAgent:
                         SLEEPY_SYSTEM_PROMPT
                         + f"You are a gentle bedtime storyteller for a {age}-year-old named {child_name}. "
                          "Begin a brand-new short bedtime adventure. "
-                         "Write only the quiet, cozy opening scene in FOUR very short sentences. "
+                         "Write only the quiet, cozy opening scene in SIX or SEVEN short sentences. "
                          "Use dreamy, sleepy imagery."
                     ),
                     user=(
                         "Start a gentle surprise bedtime adventure. "
                         "Return ONLY valid JSON:\n"
                         "{\n"
-                        '  "narration": "opening scene, four short sleepy sentences",\n'
+                        '  "narration": "opening scene, six to seven short sleepy sentences",\n'
                         '  "image_prompt": "a short valid description for the opening scene"\n'
                         "}"
                     ),

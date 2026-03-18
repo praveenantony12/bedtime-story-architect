@@ -534,6 +534,28 @@ def clean_for_tts(text: str) -> str:
     return text.strip()
 
 
+def _normalize_voice_text(text: str) -> str:
+    text = (text or "").lower()
+    text = re.sub(r"[^a-z0-9\s]", " ", text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def is_likely_voice_echo(spoken_by_app: str, heard_from_mic: str) -> bool:
+    spoken = _normalize_voice_text(spoken_by_app)
+    heard = _normalize_voice_text(heard_from_mic)
+    if len(heard) < 12 or len(spoken) < 20:
+        return False
+    if heard in spoken or spoken in heard:
+        return True
+    heard_words = [word for word in heard.split() if len(word) > 2]
+    if len(heard_words) < 4:
+        return False
+    spoken_set = set(word for word in spoken.split() if len(word) > 2)
+    overlap = sum(1 for word in heard_words if word in spoken_set)
+    return (overlap / len(heard_words)) >= 0.70
+
+
 # ── Voice system (TTS + STT injected into the top-level page) ─────────────────
 
 def voice_inject(
@@ -705,7 +727,7 @@ def voice_inject(
       u.volume = 1.0;
       // After storytelling segments leave a longer cozy silence before the
       // listener loop fires, giving the child more time to absorb each scene.
-      const endDelay = isCont ? 1200 : 400;
+    const endDelay = isCont ? 2200 : 500;
       u.onstart = () => {{ setFab('playing', 'STOP'); setLbl('Tap to interrupt'); }};
       u.onend   = () => {{ setTimeout(() => cb && cb(), endDelay); }};
       u.onerror = () => {{ cb && cb(); }};
@@ -725,13 +747,42 @@ def voice_inject(
       rec.lang = 'en-US'; rec.continuous = false; rec.interimResults = false;
       setFab('listening', '&#127908;'); setLbl(timeoutMs ? 'Say something...' : 'Your turn!');
 
+            function normalizeText(t) {{
+                return (t || '')
+                    .toLowerCase()
+                    .replace(/[^a-z0-9\\s]/g, ' ')
+                    .replace(/\\s+/g, ' ')
+                    .trim();
+            }}
+
+            function isLikelyEcho(result) {{
+                const heard = normalizeText(result);
+                const spoken = normalizeText(pw.__storyText || '');
+                if (heard.length < 12 || spoken.length < 20) return false;
+                if (spoken.includes(heard) || heard.includes(spoken)) return true;
+                const heardWords = heard.split(' ').filter(w => w.length > 2);
+                if (heardWords.length < 4) return false;
+                const spokenSet = new Set(spoken.split(' ').filter(w => w.length > 2));
+                let overlap = 0;
+                for (const word of heardWords) {{ if (spokenSet.has(word)) overlap++; }}
+                return (overlap / heardWords.length) >= 0.70;
+            }}
+
       function finish(txt) {{
         if (done) return; done = true;
         clearTimeout(timer);
         pw.__storyRec = null;
         try {{ rec.abort(); }} catch(_) {{}}
         const result = (txt || '').trim();
-        if (result) sendVoice(result);
+                if (result) {{
+                    if (isLikelyEcho(result)) {{
+                        setFab('listening', '&#127908;');
+                        setLbl('Tell me your idea...');
+                        setTimeout(() => listenThen(timeoutMs), 250);
+                        return;
+                    }}
+                    sendVoice(result);
+                }}
         else if (timeoutMs) sendVoice('__CONTINUE__');
                 else {{ setFab('idle', 'START'); setLbl('Tap to answer'); }}  // wait until kid speaks
       }}
@@ -798,8 +849,8 @@ def voice_inject(
         return;
       }}
       if (cls === 'listening') {{
-        if (pw.__storyRec) {{ try {{ pw.__storyRec.abort(); }} catch(_) {{}} pw.__storyRec = null; }}
-        sendVoice('__CONTINUE__');
+                if (pw.__storyRec) {{ try {{ pw.__storyRec.abort(); }} catch(_) {{}} pw.__storyRec = null; }}
+                sendVoice('__CONTINUE__');
         return;
       }}
     }});
@@ -1065,6 +1116,11 @@ def main() -> None:
             save_session()
         st.rerun()
     elif voice_input:
+        last_tts = st.session_state.get("last_tts_text", "")
+        if is_likely_voice_echo(last_tts, voice_input):
+            st.session_state["speak_trigger"] = False
+            save_session()
+            st.rerun()
         phase_now = st.session_state.get("phase", "greeting")
         affirmatives = {"yes", "yeah", "yep", "sure", "of course", "definitely", "please", "let's go", "ok", "okay"}
         is_yes = any(w in voice_input.lower() for w in affirmatives)
@@ -1135,6 +1191,7 @@ def main() -> None:
     narration_text = st.session_state.get("current_narration", "")
     question_text = st.session_state.get("current_question", "")
     tts_text = f"{narration_text} {question_text}".strip() if question_text else narration_text
+    st.session_state["last_tts_text"] = tts_text
     voice_inject(
         text_to_speak=tts_text,
         is_idle=is_idle,

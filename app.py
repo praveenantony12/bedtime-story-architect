@@ -155,8 +155,17 @@ def ensure_session_defaults(
     st.session_state["thread_id"] = sess.get("thread_id") or str(uuid.uuid4())
     st.session_state["profile_set"] = bool(clean_name)
 
-    if is_voice_nav:
-        # Mid-story page reload — restore conversation state from disk
+    has_resume_state = bool(
+        sess.get("thread_id")
+        and (
+            sess.get("greeting_done")
+            or sess.get("story_so_far")
+            or sess.get("current_narration")
+        )
+    )
+
+    if is_voice_nav or has_resume_state:
+        # Mid-story reload/reconnect — restore conversation state from disk
         st.session_state["phase"] = sess.get("phase", "greeting")
         st.session_state["story_so_far"] = sess.get("story_so_far", "")
         st.session_state["current_question"] = sess.get("current_question", "")
@@ -170,7 +179,7 @@ def ensure_session_defaults(
         st.session_state["goodnight"] = sess.get("goodnight", "")
         st.session_state["yes_count"] = sess.get("yes_count", 0)
         st.session_state["last_tts_text"] = sess.get("last_tts_text", "")
-        st.session_state["has_shown_voice"] = True  # no delay after voice nav
+        st.session_state["has_shown_voice"] = bool(sess.get("greeting_done") or sess.get("current_narration"))
     else:
         # Fresh open — start a clean story session (profile is preserved)
         st.session_state["phase"] = "greeting"

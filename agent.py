@@ -1,7 +1,6 @@
 import json
 import os
 import re
-import sys
 from dataclasses import dataclass, field
 from typing import Any, Literal, Optional, TypedDict
 
@@ -152,10 +151,7 @@ class BedtimeStoryAgent:
             if not greeting:
                 greeting = f"Hello {child_name}... It's so wonderful to see you tonight..."
             # Hardcode the pause + question here so it always comes after the greeting with a clear separation
-            print(f"[DEBUG] LLM raw greeting: {raw!r}", file=sys.stderr)
-            print(f"[DEBUG] Greeting after cleanup: {greeting!r}", file=sys.stderr)
             narration = f"{greeting} ... What kind of story would you like to hear tonight?"
-            print(f"[DEBUG] Final narration: {narration!r}", file=sys.stderr)
             return {
                 **state,
                 "phase": "storytelling",

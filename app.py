@@ -16,6 +16,7 @@ load_dotenv()
 
 APP_TITLE = "Dream Story Time"
 SESSION_FILE = ".story_session.json"
+INTRO_IMAGE_FILE = os.path.join("static", "intro-page-image.png")
 
 
 # ── Persistence ───────────────────────────────────────────────────────────────
@@ -155,17 +156,20 @@ def ensure_session_defaults(
     st.session_state["thread_id"] = sess.get("thread_id") or str(uuid.uuid4())
     st.session_state["profile_set"] = bool(clean_name)
 
-    has_resume_state = bool(
+    pending_greeting_state = bool(
         sess.get("thread_id")
+        and sess.get("phase") == "storytelling"
+        and not (sess.get("story_so_far") or "").strip()
+        and bool(sess.get("greeting_done"))
         and (
-            sess.get("greeting_done")
-            or sess.get("story_so_far")
-            or sess.get("current_narration")
+            "what kind of story" in (sess.get("current_narration", "").lower())
+            or "what kind of story" in (sess.get("current_question", "").lower())
         )
     )
 
-    if is_voice_nav or has_resume_state:
-        # Mid-story reload/reconnect — restore conversation state from disk
+    if is_voice_nav or pending_greeting_state:
+        # Voice-navigation reload, or reconnect while waiting for the kid's first prompt.
+        # Do not broadly resume old story sessions on normal page loads.
         st.session_state["phase"] = sess.get("phase", "greeting")
         st.session_state["story_so_far"] = sess.get("story_so_far", "")
         st.session_state["current_question"] = sess.get("current_question", "")
@@ -179,7 +183,8 @@ def ensure_session_defaults(
         st.session_state["goodnight"] = sess.get("goodnight", "")
         st.session_state["yes_count"] = sess.get("yes_count", 0)
         st.session_state["last_tts_text"] = sess.get("last_tts_text", "")
-        st.session_state["has_shown_voice"] = bool(sess.get("greeting_done") or sess.get("current_narration"))
+        # Show START on normal page load; only keep active voice mode during voice navigation.
+        st.session_state["has_shown_voice"] = bool(is_voice_nav)
     else:
         # Fresh open — start a clean story session (profile is preserved)
         st.session_state["phase"] = "greeting"
@@ -955,6 +960,16 @@ def run_agent_turn(agent, thread_id, phase, child_name, age, kid_input, story_so
     )
 
 
+def _load_intro_image_bytes() -> bytes | None:
+    try:
+        if os.path.exists(INTRO_IMAGE_FILE):
+            with open(INTRO_IMAGE_FILE, "rb") as f:
+                return f.read()
+    except Exception:
+        return None
+    return None
+
+
 # ── Main ───────────────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -1185,9 +1200,18 @@ def main() -> None:
     if cached_b64:
         img_placeholder.image(base64.b64decode(cached_b64), width="stretch")
 
+    phase_now = st.session_state.get("phase", "greeting")
+    story_now = st.session_state.get("story_so_far", "")
+    is_intro_scene = phase_now == "storytelling" and not story_now.strip()
+
+    if is_intro_scene:
+        intro_img = _load_intro_image_bytes()
+        if intro_img:
+            img_placeholder.image(intro_img, width="stretch")
+
     new_prompt  = st.session_state.get("current_image_prompt", "")
     last_prompt = st.session_state.get("last_fetched_prompt", "")
-    if new_prompt and new_prompt != last_prompt:
+    if (not is_intro_scene) and new_prompt and new_prompt != last_prompt:
         with st.spinner("Painting your scene..."):
             img_bytes = fetch_story_image(new_prompt)
         new_b64 = base64.b64encode(img_bytes).decode()

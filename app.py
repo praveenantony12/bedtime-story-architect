@@ -582,6 +582,7 @@ def voice_inject(
     is_continuous: bool = False,
     force_reset: bool = False,
     auto_stop: bool = False,
+    story_active: bool = False,
 ) -> None:
     clean = (
         clean_for_tts(text_to_speak)
@@ -595,6 +596,7 @@ def voice_inject(
     is_cont_js      = "true" if is_continuous else "false"
     force_reset_js  = "true" if force_reset else "false"
     auto_stop_js    = "true" if auto_stop else "false"
+    story_active_js = "true" if story_active else "false"
 
     bridge_html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>
 <script>
@@ -605,6 +607,7 @@ def voice_inject(
   const IS_CONT     = {is_cont_js};
   const FORCE_RESET = {force_reset_js};
   const AUTO_STOP   = {auto_stop_js}; // after TTS, auto-send __STOP__ (ending sequence)
+    const STORY_ACTIVE = {story_active_js};
   const pw = window.parent;
   const pd = pw.document;
 
@@ -619,6 +622,10 @@ def voice_inject(
     setFab('sending', '✓');
     setLbl(text === '__CONTINUE__' ? 'Next...' : 'Got it!');
     pw.speechSynthesis && pw.speechSynthesis.cancel();
+        if (text === '__STOP__') {{
+            pw.__storyActive = false;
+            syncWakeLock();
+        }}
         const name = pw.localStorage.getItem('bst_child_name') || '';
         const age = pw.localStorage.getItem('bst_child_age') || '';
         const p = new URLSearchParams();
@@ -636,6 +643,48 @@ def voice_inject(
     const l = pd.getElementById('__sfab-lbl'); if (l) l.textContent = t;
   }}
 
+    async function requestWakeLock() {{
+        if (!('wakeLock' in pw.navigator)) return;
+        if (!pw.__storyActive || pd.visibilityState !== 'visible') return;
+        if (pw.__storyWakeLock) return;
+        try {{
+            const sentinel = await pw.navigator.wakeLock.request('screen');
+            pw.__storyWakeLock = sentinel;
+            sentinel.addEventListener('release', () => {{
+                if (pw.__storyWakeLock === sentinel) pw.__storyWakeLock = null;
+            }});
+        }} catch (err) {{
+            console.warn('Wake lock request failed', err);
+        }}
+    }}
+
+    async function releaseWakeLock() {{
+        const sentinel = pw.__storyWakeLock;
+        pw.__storyWakeLock = null;
+        if (!sentinel) return;
+        try {{
+            await sentinel.release();
+        }} catch (err) {{
+            console.warn('Wake lock release failed', err);
+        }}
+    }}
+
+    function syncWakeLock() {{
+        if (pw.__storyActive) {{
+            requestWakeLock();
+        }} else {{
+            releaseWakeLock();
+        }}
+    }}
+
+    async function handleWakeLockVisibility() {{
+        if (pd.visibilityState === 'visible' && pw.__storyActive) {{
+            await requestWakeLock();
+        }} else if (pd.visibilityState !== 'visible') {{
+            await releaseWakeLock();
+        }}
+    }}
+
     function canStartNow() {{
         const now = Date.now();
         const last = pw.__storyLastStartTs || 0;
@@ -647,6 +696,16 @@ def voice_inject(
     if (FORCE_RESET) {{
         try {{ pw.speechSynthesis && pw.speechSynthesis.cancel(); }} catch(_) {{}}
         if (pw.__storyRec) {{ try {{ pw.__storyRec.abort(); }} catch(_) {{}} pw.__storyRec = null; }}
+        pw.__storyActive = false;
+        releaseWakeLock();
+        if (pw.__storyWakeLockVisibilityHandler) {{
+            pd.removeEventListener('visibilitychange', pw.__storyWakeLockVisibilityHandler);
+            pw.__storyWakeLockVisibilityHandler = null;
+        }}
+        if (pw.__storyWakeLockPageHideHandler) {{
+            pw.removeEventListener('pagehide', pw.__storyWakeLockPageHideHandler);
+            pw.__storyWakeLockPageHideHandler = null;
+        }}
         const oldFab = pd.getElementById('__sfab');
         const oldLbl = pd.getElementById('__sfab-lbl');
         const oldCss = pd.getElementById('__sfab-css');
@@ -660,6 +719,21 @@ def voice_inject(
   // ── Install FAB + styles once ─────────────────────────────────────────
   if (!pw.__storyInstalled) {{
     pw.__storyInstalled = true;
+        if (!('wakeLock' in pw.navigator)) {{
+            console.info('Screen Wake Lock API is not supported in this browser');
+        }}
+        if (!pw.__storyWakeLockVisibilityHandler) {{
+            pw.__storyWakeLockVisibilityHandler = () => {{
+                handleWakeLockVisibility();
+            }};
+            pd.addEventListener('visibilitychange', pw.__storyWakeLockVisibilityHandler);
+        }}
+        if (!pw.__storyWakeLockPageHideHandler) {{
+            pw.__storyWakeLockPageHideHandler = () => {{
+                releaseWakeLock();
+            }};
+            pw.addEventListener('pagehide', pw.__storyWakeLockPageHideHandler);
+        }}
 
     const css = pd.createElement('style');
     css.id = '__sfab-css';
@@ -850,6 +924,8 @@ def voice_inject(
     }}
 
     pw.__storyGo = function() {{
+        pw.__storyActive = true;
+        syncWakeLock();
         if (pw.__storyAutoStop) {{
             // Ending narration: after TTS finishes, auto-reset so the app returns to START
             speak(pw.__storyText || '', () => sendVoice('__STOP__'));
@@ -875,6 +951,8 @@ def voice_inject(
         // Tap STOP → immediately switch to START and say goodbye
         synth.cancel();
         if (pw.__storyRec) {{ try {{ pw.__storyRec.abort(); }} catch(_) {{}} pw.__storyRec = null; }}
+                pw.__storyActive = false;
+                syncWakeLock();
         setFab('idle', 'START');
         setLbl('See you next time! 🌙');
         const byeU = new pw.SpeechSynthesisUtterance('Sweet dreams... Sleep tight... and dream of your own magical adventures.');
@@ -908,6 +986,8 @@ def voice_inject(
   pw.__storyText     = TEXT;
   pw.__storyCont     = IS_CONT;
   pw.__storyAutoStop = AUTO_STOP;
+    pw.__storyActive   = STORY_ACTIVE;
+    syncWakeLock();
 
   const fab = pd.getElementById('__sfab');
   const lbl = pd.getElementById('__sfab-lbl');
@@ -1262,6 +1342,7 @@ def main() -> None:
     phase       = st.session_state.get("phase", "greeting")
     is_ending   = st.session_state.get("is_ending", False)
     is_cont     = phase == "storytelling" and bool(st.session_state.get("story_so_far", "").strip())
+    story_active = st.session_state.get("has_shown_voice", False) and not is_ending
     # Speak both the narration AND the question (e.g. "Would you like to hear more?")
     narration_text = st.session_state.get("current_narration", "")
     question_text = st.session_state.get("current_question", "")
@@ -1274,6 +1355,7 @@ def main() -> None:
         is_continuous=is_cont,
         force_reset=force_reset,
         auto_stop=is_ending,  # after TTS finishes, auto-send __STOP__ to reset for next story
+        story_active=story_active,
     )
 
 

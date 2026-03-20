@@ -37,7 +37,7 @@ VOICE SYNTHESIS RULES (CRITICAL):
 3. Use DASHES (—) for a soft, sleepy breath between thoughts.
 4. NEVER use symbols, emojis, asterisks, hashtags, or bullet points.
 5. Spell out ALL numbers: write 'three' not '3'.
-6. Keep responses to SIX or SEVEN short, simple sentences - speak slowly, leave room for silence.
+6. Keep responses to SEVEN or EIGHT short, simple sentences - speak slowly, leave room for silence.
 
 NARRATIVE STYLE:
 - Narrate in a very slow, whispering, lullaby like voice.
@@ -47,7 +47,7 @@ NARRATIVE STYLE:
 - Gradually lower the energy of each segment - get quieter, slower, and dreamier as the story continues.
 - Use gentle 'sleep words': moonlight, soft, cozy, snuggly, quiet, dreamy, twinkling, glowing, peaceful, gentle, calm, sleepy, drowsy.
 - If the kid says 'yes' for more, gently continue. If 'no', give a loving sleepy farewell and end the story.
-"""
+"
 
 
 def _remove_question_sentences(text: str) -> str:
@@ -194,18 +194,18 @@ class BedtimeStoryAgent:
                     + f"You are a gentle bedtime storyteller whispering a soothing story to a {age}-year-old named {child_name}. "
                     "Narrate very slowly, as if the child is already drowsy and drifting to sleep. "
                     "Use frequent ellipses (...) so the words flow with natural, sleepy pauses. "
-                    "Keep each segment to SIX or SEVEN short sentences so each scene feels complete. "
+                    "Keep each segment to SEVEN or EIGHT short sentences so each scene feels complete. "
                     "Use simple, peaceful, vivid images - moonlight, soft glowing stars, cozy blankets, gentle animals, quiet forests, twinkling fireflies, soft clouds, shimmering lakes, magical doors, sleepy villages, etc. "
                     "Weave the child's ideas into the story when they speak. "
                     "After two to four segments total, bring the story to a calm and satisfying close. "
                     "Keep language simple and age-appropriate."
                 ),
                 user=(
-                    f"Story so far:\n{story_so_far or '(none yet)'}\n\n"
+                    f"Story so far:\n{story_so_far or '(none yet)}'\n\n"
                     f"{situation}\n\n"
                     "Return ONLY valid JSON:\n"
                     "{\n"
-                    '  "narration": "the next story segment, six to seven short sentences",\n'
+                    '  "narration": "the next story segment, seven to eight short sentences",\n'
                     '  "image_prompt": "a short vivid illustration description for this scene",\n'
                     '  "is_finished": true or false\n'
                     "}"
@@ -216,120 +216,11 @@ class BedtimeStoryAgent:
             narration = data.get("narration", "And the adventure continued...")
             updated_story = f"{story_so_far}\n\n{narration}".strip()
             is_finished = bool(data.get("is_finished", False))
+
             return {
                 **state,
-                "phase": "want_more" if is_finished else "storytelling",
                 "story_so_far": updated_story,
                 "narration": narration,
-                "image_prompt": data.get("image_prompt", "a magical story scene under the stars"),
-                "question_for_kid": "Would you like to hear another story?" if is_finished else "",
+                "image_prompt": data.get("image_prompt", ""),
                 "is_story_finished": is_finished,
-                "moral": "",
-                "goodnight_message": "",
             }
-
-        if phase == "want_more":
-            affirmatives = {"yes", "yeah", "yep", "sure", "please", "more", "continue", "ok", "okay", "yay", "another"}
-            wants_more = any(w in kid_input.lower() for w in affirmatives) if kid_input else False
-            if wants_more:
-                # Generate the opening scene of a new continuation story right here so
-                # story_so_far is non-empty - this makes is_cont=True in the UI and lets
-                # the narration flow automatically without asking the kid "what story next?"
-                raw = self._llm(
-                    system=(
-                        SLEEPY_SYSTEM_PROMPT
-                        + f"You are a gentle bedtime storyteller for a {age}-year-old named {child_name}. "
-                         "Begin a brand-new short bedtime adventure. "
-                         "Write only the quiet, cozy opening scene in SIX or SEVEN short sentences. "
-                         "Use dreamy, sleepy imagery."
-                    ),
-                    user=(
-                        "Start a gentle surprise bedtime adventure. "
-                        "Return ONLY valid JSON:\n"
-                        "{\n"
-                        '  "narration": "opening scene, six to seven short sleepy sentences",\n'
-                        '  "image_prompt": "a short valid description for the opening scene"\n'
-                        "}"
-                    ),
-                    temperature=0.85,
-                )
-                data = self._parse_json(raw)
-                first_segment = data.get(
-                    "narration",
-                    f"Once upon a time... in a land of soft moonlight... a new adventure was just beginning...",
-                )
-                return {
-                    **state,
-                    "phase": "storytelling",
-                    "story_so_far": first_segment,
-                    "kid_input": "",
-                    "narration": first_segment,
-                    "image_prompt": data.get("image_prompt", "a new magical door opening into a shimmering glowing world"),
-                    "question_for_kid": "",
-                    "is_story_finished": False,
-                    "moral": "",
-                    "goodnight_message": "",
-                }
-            else:
-                raw = self._llm(
-                    system=(
-                        SLEEPY_SYSTEM_PROMPT
-                        + "You are a warm loving bedtime storyteller wrapping up the evening."
-                    ),
-                    user=(
-                        f"Story that was just told:\n{story_so_far}\n\n"
-                        f"Child: {child_name}, age: {age}. "
-                        "Give a beautiful one-sentence moral and a warm loving goodnight message. "
-                        "Return ONLY valid JSON: "
-                        '{"moral": "...", "goodnight_message": "..."}'
-                    ),
-                    temperature=0.6,
-                )
-                data = self._parse_json(raw)
-                moral = data.get("moral", "Always be kind and brave, and dreams will come true.")
-                goodnight = data.get(
-                    "goodnight_message",
-                    f"Sweet dreams, {child_name}! Sleep tight and dream of great adventures.",
-                )
-                return {
-                    **state,
-                    "phase": "ending",
-                    "narration": f"{moral} {goodnight}",
-                    "image_prompt": "a peaceful sleeping child with a gentle smile under glowing stars and a crescent moon",
-                    "question_for_kid": "",
-                    "is_story_finished": True,
-                    "moral": moral,
-                    "goodnight_message": goodnight,
-                }
-
-        return {**state, "narration": "", "question_for_kid": ""}
-
-    def run_turn(
-        self,
-        *,
-        thread_id: str,
-        child_name: Optional[str] = None,
-        age: Optional[int] = None,
-        phase: Phase = "greeting",
-        kid_input: Optional[str] = None,
-        story_so_far: Optional[str] = None,
-    ) -> StoryState:
-        initial_state: StoryState = {
-            "child_name": child_name or "",
-            "age": age or 6,
-            "phase": phase,
-            "kid_input": kid_input or "",
-            "story_so_far": story_so_far or "",
-        }
-        result = self._graph.invoke(
-            initial_state,
-            config={"configurable": {"thread_id": thread_id}},
-        )
-        return result
-
-
-def get_agent() -> BedtimeStoryAgent:
-    if not hasattr(get_agent, "_instance"):
-        setattr(get_agent, "_instance", BedtimeStoryAgent())
-    return getattr(get_agent, "_instance")
-

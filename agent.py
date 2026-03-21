@@ -23,7 +23,7 @@ VOICE_RULES = (
     "Use em-dashes (—) for a quick breath. "
     "NEVER use emojis, hashtags, asterisks, bullet points, or any symbols. "
     "Spell out all numbers as words (e.g. 'three' not '3'). "
-    "Sound warm, gentle, and loving - like a caring parent or grandparent at bedtime. "
+    "Sound magical, encouraging, and supportive - like a caring parent or grandparent at bedtime. "
     "Keep each response gentle and easy to follow."
 )
 
@@ -37,14 +37,14 @@ VOICE SYNTHESIS RULES (CRITICAL):
 3. Use DASHES (—) for a soft, sleepy breath between thoughts.
 4. NEVER use symbols, emojis, asterisks, hashtags, or bullet points.
 5. Spell out ALL numbers: write 'three' not '3'.
-6. Keep responses to SIX or SEVEN short, simple sentences - speak slowly, leave room for silence.
+6. Keep responses to 8-10 sentences, divided into exactly three segments - speak slowly, leave room for silence.
 
-NARRATIVE STYLE:
+NARRATIVE STYLE: - Narrate in a magical and encouraging tone. - Divide the story into three segments: a brave hero faces a problem, they use their special skill to overcome a challenge, and they save the day with a final moral about being yourself.: - Narrate in a magical and encouraging tone. - Divide the story into three segments: a brave hero faces a problem, they use their special skill to overcome a challenge, and they save the day with a final moral about being yourself.
 - Narrate in a very slow, whispering, lullaby like voice.
 - Picture yourself sitting beside the child who is already half asleep.
 - Use simple words that are easy for a tired mind to follow.
 - Pause often with ellipses so the child can paint the picture in their mind.
-- Gradually lower the energy of each segment - get quieter, slower, and dreamier as the story continues.
+- Maintain a consistent magical and encouraging tone throughout the story, with a natural flow between segments - get quieter, slower, and dreamier as the story continues.
 - Use gentle 'sleep words': moonlight, soft, cozy, snuggly, quiet, dreamy, twinkling, glowing, peaceful, gentle, calm, sleepy, drowsy.
 - If the kid says 'yes' for more, gently continue. If 'no', give a loving sleepy farewell and end the story.
 """
@@ -194,7 +194,7 @@ class BedtimeStoryAgent:
                     + f"You are a gentle bedtime storyteller whispering a soothing story to a {age}-year-old named {child_name}. "
                     "Narrate very slowly, as if the child is already drowsy and drifting to sleep. "
                     "Use frequent ellipses (...) so the words flow with natural, sleepy pauses. "
-                    "Keep each segment to SIX or SEVEN short sentences so each scene feels complete. "
+                    "Keep each segment to 8-10 sentences, divided into exactly three segments sentences so each scene feels complete. "
                     "Use simple, peaceful, vivid images - moonlight, soft glowing stars, cozy blankets, gentle animals, quiet forests, twinkling fireflies, soft clouds, shimmering lakes, magical doors, sleepy villages, etc. "
                     "Weave the child's ideas into the story when they speak. "
                     "After two to four segments total, bring the story to a calm and satisfying close. "
@@ -240,7 +240,7 @@ class BedtimeStoryAgent:
                         SLEEPY_SYSTEM_PROMPT
                         + f"You are a gentle bedtime storyteller for a {age}-year-old named {child_name}. "
                          "Begin a brand-new short bedtime adventure. "
-                         "Write only the quiet, cozy opening scene in SIX or SEVEN short sentences. "
+                         "Write only the quiet, cozy opening scene in 8-10 sentences, divided into exactly three segments sentences. "
                          "Use dreamy, sleepy imagery."
                     ),
                     user=(
